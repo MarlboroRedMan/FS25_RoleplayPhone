@@ -1,22 +1,27 @@
-# FS25 Roleplay Invoices
+# FS25 RoleplayPhone
 
-A Farming Simulator 25 mod that adds a roleplay phone UI for managing invoices between farms on multiplayer servers. Built for serious RP communities that want an in-game economy with real accountability.
+A Farming Simulator 25 mod that adds a full-featured roleplay smartphone UI for multiplayer servers. Built for serious RP communities that want an in-game economy with real accountability — invoices, contacts, messaging, calls, notifications, and more.
 
 ---
 
 ## Features
 
-- 📱 **Phone UI** — Press F7 to open/close a modern smartphone interface
+- 📱 **Phone UI** — Press F7 to open/close a modern smartphone interface with wallpaper, clock, and weather
 - 🕐 **Live clock & date** — Displays current in-game time, day, and season on the home screen
 - 📄 **Invoice System** — Create and manage invoices between farms for rent, leases, vehicle sales, services, and more
 - 📥 **Inbox / Outbox** — Separate views for received and sent invoices
 - 💰 **Payment System** — Recipients can pay invoices directly (deducts from farm account), or senders can manually mark as paid
 - ✅ **Invoice Actions** — Accept, reject, or mark invoices as paid with full status tracking
 - 📋 **23 Invoice Categories** — Houses, campers, shops, storage, land leases, vehicle transactions, services, and more
-- 📇 **Contact Manager** — Save farm contacts by name, farm, phone number, and notes
-- 🔔 **Ping System** — Send a ping notification to another farm
-- 💾 **Persistent Storage** — Invoices and contacts save with your game and persist between sessions
+- 📇 **Contacts** — Save farm contacts with name, farm, phone number, and notes
+- 💬 **Messaging** — Send text messages between farms with conversation threads
+- 📞 **Calling** — Call contacts directly from the phone; F8 answers or hangs up (works while driving)
+- 🔔 **Notifications** — Color-coded on-screen notifications for invoices, messages, calls, and pings
+- 📋 **Recent Calls** — View call history for the current session (resets each time you load the game)
+- ⚙️ **Settings** — Wallpaper, time format (12/24hr), temperature units (°F/°C), battery display
+- 💾 **Persistent Storage** — Invoices and contacts save with your game
 - 🌐 **Multiplayer Ready** — Full server/client sync via network events
+- 🌤️ **Weather & Market apps** — Visible on page 2 of the home screen but not yet functional — coming in v0.3.0
 
 ---
 
@@ -24,18 +29,18 @@ A Farming Simulator 25 mod that adds a roleplay phone UI for managing invoices b
 
 | Category | Category |
 |---|---|
-| Rent - House (Small) | Rent - House (Large) |
-| Rent - Camper / RV | Rent - Shop / Business |
-| Rent - Storage Unit | Lease - Land |
-| Lease - Crop Share | Lease - Equipment |
-| Vehicle Sale | Vehicle Lease |
-| Vehicle Rental (Daily) | Vehicle Rental (Weekly) |
-| Service - Labor | Service - Delivery |
-| Service - Snow / Mowing / Cleanup | Service - Custom Work |
-| Loan Repayment | Fine / Penalty |
-| Government Tax | Government Fee |
-| Utility Bill | Insurance |
-| Other | |
+| Rent - House (Small) | Rent - House (Medium) |
+| Rent - House (Large) | Rent - House (Luxury) |
+| Rent - Camper (Full Hookup) | Rent - Camper (Water & Power) |
+| Rent - Camper (Electric Only) | Rent - Camper (Land Use Only) |
+| Rent - Shop (Full Use) | Rent - Shop (Single Bay) |
+| Rent - Storage (Indoor) | Rent - Storage (Covered) |
+| Rent - Storage (Yard) | Lease - Agricultural Land |
+| Lease - Yard / Equipment Staging | Lease - Industrial / Mining Land |
+| Vehicle - Sale (Paid in Full) | Vehicle - Sale (Installment Payment) |
+| Vehicle - Lease / Rental | Service - Labor |
+| Service - Hauling | Service - Equipment Operation |
+| Service - Snow / Mowing / Cleanup | |
 
 ---
 
@@ -51,10 +56,21 @@ A Farming Simulator 25 mod that adds a roleplay phone UI for managing invoices b
 
 ---
 
+## Key Bindings
+
+| Key | Action |
+|---|---|
+| F7 | Open / Close phone |
+| F8 | Answer or hang up call (works on foot and in vehicles) |
+
+Both bindings are remappable in the FS25 key bindings menu.
+
+---
+
 ## How to Use
 
 ### Opening the Phone
-Press **F7** to toggle the phone open and closed from anywhere in-game.
+Press **F7** to toggle the phone open and closed while on foot. The phone cannot be opened while in a vehicle — but if a call comes in while driving, press **F8** to answer or hang up without needing to open the phone.
 
 ### Sending an Invoice
 1. Open the phone and tap **Invoices**
@@ -67,56 +83,63 @@ Press **F7** to toggle the phone open and closed from anywhere in-game.
 2. Select the invoice
 3. Tap **Pay** — the amount is deducted from your farm account and the invoice is marked PAID
 
-### Managing Contacts
+### Calling a Contact
 1. Open the phone and tap **Contacts**
-2. Tap **+ Add** to create a new contact with name, farm, phone, and notes
-3. Tap any contact to view or delete it
+2. Tap a contact to open their detail screen
+3. Tap **Call** — a compact call popup appears (you can still drive)
+4. The other player presses **F8** to answer — or **F8** again to hang up
+
+### Messaging
+1. Open the phone and tap **Contacts**
+2. Tap a contact → tap **Message**
+3. Type your message and tap **Send**
+
+### A Note on Phone Numbers
+The phone number field is cosmetic RP flavor only — it doesn't route calls or do anything functional. Players can enter any format they like, up to 60 characters. All of these work fine:
+- `555-0101`
+- `(555)555-1000`
+- `6546494564`
+- Any custom format your server agrees on
 
 ---
 
 ## Multiplayer Notes
 
 - The **host** handles all invoice saving and loading
-- Clients receive invoice updates in real time via network sync
+- Clients receive invoice and contact updates in real time via network sync
 - Clients do not need direct access to the savegame directory
 - All invoice actions (pay, reject, mark paid) broadcast to all connected players
+- Incoming calls do not freeze either player — the call popup is non-blocking
+- **New save recommended** — starting a fresh save avoids any leftover data from older versions of the mod
+- **Contacts are per-farm** — each player manages their own contact list, contacts do not sync between players
+- **The zip filename matters** — the file must stay named `FS25_RoleplayPhone.zip`, do not rename it
 
 ---
 
 ## Current Version
 
-**v0.1.0** — Initial release
-
----
-
-## Known Issues / Work in Progress
-
-- Invoice IDs are randomly generated; no sequential numbering yet
-- No in-game notification when a new invoice is received (coming soon)
-- Phone UI is keyboard/mouse only; controller support not planned
+**v0.2.0** — Major update adding calls, messaging, notifications, recent calls, contact overhaul, and multiplayer fixes
 
 ---
 
 ## 🤖 AI-Assisted Development
 
-This mod was developed collaboratively between a human creator and Claude (Anthropic AI).
-The vision, direction, design decisions, and testing were all driven by MarlboroRedMan —
-Claude handled the code implementation based on those ideas.
+This mod was developed collaboratively between a human creator and Claude (Anthropic AI). The vision, direction, design decisions, and testing were all driven by MarlboroRedMan — Claude handled the code implementation based on those ideas.
 
 ### Codebase Statistics
-- **2,411 lines of code** across 6 Lua scripts
-- **14 total mod files** (6 Lua • 2 XML • 5 textures • 1 localization)
-- **4 core systems** — Invoice, Contact, Save, and Network Events
+- **2,800+ lines of code** across 7 Lua scripts
+- **22 total mod files** (7 Lua • 2 XML • 11 textures • 1 sound • 1 localization)
+- **5 core systems** — Invoice, Contact, Save, Network Events, and Notifications
 - **1 network event module** for full multiplayer sync
 - **1 persistent save/load system** integrated with FS25's save cycle
-- Developed February 2026
+- Developed February–March 2026
 
 ---
 
 ## Credits
 
-**Mod Author:** MarlboroRedMan  
-**Development Assistance:** Claude (Anthropic AI)  
+**Mod Author:** MarlboroRedMan
+**Development Assistance:** Claude (Anthropic AI)
 
 ---
 
