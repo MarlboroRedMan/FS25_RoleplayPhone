@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modDesc descVersion="106">
+    <title>Roleplay Phone</title>
+    <description>
+        A full-featured roleplay smartphone for multiplayer FS25 servers.
+        Invoices, contacts, messaging, calls, notifications, and more.
+        Built for serious RP communities that want a real in-game economy.
+    </description>
+
+    <version>0.2.0</version>
+    <author>MRM &amp; Claude (Anthropic)</author>
+    <iconFilename>textures/icon.dds</iconFilename>
+	<multiplayer supported="true"/>
+
+    <actions>
+        <action name="RI_OPEN_PHONE"   category="ONFOOT VEHICLE" axisType="BUTTON"/>
+        <action name="RI_CALL_ACTION"  category="ONFOOT VEHICLE" axisType="BUTTON"/>
+        <action name="RI_BACKSPACE"    category="ONFOOT VEHICLE" axisType="BUTTON"/>
+    </actions>
+
+    <inputBinding>
+        <actionBinding action="RI_OPEN_PHONE">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f7"/>
+        </actionBinding>
+        <actionBinding action="RI_CALL_ACTION">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f8"/>
+        </actionBinding>
+        <actionBinding action="RI_BACKSPACE">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_backspace"/>
+        </actionBinding>
+    </inputBinding>
+
+    <extraSourceFiles>
+        <sourceFile filename="scripts/Invoice.lua"/>
+        <sourceFile filename="scripts/InvoiceManager.lua"/>
+        <sourceFile filename="scripts/InvoiceSave.lua"/>
+        <sourceFile filename="scripts/InvoiceEvents.lua"/>
+        <sourceFile filename="scripts/ContactManager.lua"/>
+        <sourceFile filename="scripts/NotificationManager.lua"/>
+        <sourceFile filename="scripts/UsedPlusCompat.lua"/>
+        <sourceFile filename="scripts/RoleplayPhone.lua"/>
+    </extraSourceFiles>
+
+    <l10n filenamePrefix="localization/l10n">
+        <text name="input_RI_OPEN_PHONE">
+            <en>Open Roleplay Phone</en>
+        </text>
+        <text name="input_RI_CALL_ACTION">
+            <en>Answer / Hang Up Call</en>
+        </text>
+        <text name="input_RI_BACKSPACE">
+            <en>Roleplay Phone Backspace</en>
+        </text>
+    </l10n>
+</modDesc>
