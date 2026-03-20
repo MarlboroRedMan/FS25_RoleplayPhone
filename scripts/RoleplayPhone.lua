@@ -50,6 +50,14 @@ RoleplayPhone.backspaceEventId          = nil
 RoleplayPhone.callHistory               = {}  -- current session only, cleared on game restart
 RoleplayPhone.hitboxes       = {}   -- rebuilt every draw frame
 
+-- ─── Aspect ratio correction ──────────────────────────────────────────────────
+-- FS25 normalised coords: 0-1 on both axes. On ultrawide, same x-range covers
+-- far more physical pixels, stretching everything horizontally.
+-- arScale corrects widths:  correctedW = baseW * arScale
+-- actualAR corrects shapes: squareH   = sideW * actualAR
+RoleplayPhone.arScale  = 1.0      -- (16/9) / actual — set in init()
+RoleplayPhone.actualAR = 16 / 9   -- screenW / screenH — set in init()
+
 -- ─── Home screen page system ──────────────────────────────────────────────────
 RoleplayPhone.homePage       = 1    -- current page (1 = home with clock/weather)
 RoleplayPhone.homePageCount  = 2    -- total pages (grows as we add apps)
@@ -141,14 +149,27 @@ RoleplayPhone.contactForm = {
 
 -- ─── Layout: small phone (HOME screen) ───────────────────────────────────────
 RoleplayPhone.PHONE = {
-    x = 0.390, y = 0.05,
-    w = 0.220, h = 0.65,
+    x = 0.390, y = 0.10,
+    w = 0.220, h = 0.55,
 }
 
 -- ─── Layout: big screen (INVOICES, CONTACTS, PING) ───────────────────────────
 RoleplayPhone.BIG = {
-    x = 0.390, y = 0.05,
-    w = 0.220, h = 0.65,
+    x = 0.390, y = 0.10,
+    w = 0.220, h = 0.55,
+}
+
+-- ─── Phone frame texture — screen hole pixel coords within 900×900 image ─────
+-- The transparent screen area in Test_Phone_Pic.dds is approximately here.
+-- Tune these 4 numbers until the frame bezel lines up with the screen edges.
+--   L = pixels from LEFT  edge of image to LEFT  side of screen hole
+--   R = pixels from LEFT  edge of image to RIGHT side of screen hole
+--   B = pixels from BOTTOM edge of image to BOTTOM of screen hole
+--   T = pixels from BOTTOM edge of image to TOP    of screen hole
+RoleplayPhone.FRAME_SCREEN = {
+    L = 38,  R = 474,
+    B = 100, T = 914,
+    imgW = 512, imgH = 1024,
 }
 
 -- ─── Init ─────────────────────────────────────────────────────────────────────
@@ -160,6 +181,13 @@ function RoleplayPhone:init()
     self.iconContacts = createImageOverlay(tex .. "icon_contacts.dds")
     self.iconCalls    = createImageOverlay(tex .. "recent_call.dds")
     self.iconSettings = createImageOverlay(tex .. "icon_settings.dds")
+    self.phoneFrame   = createImageOverlay(tex .. "phone_frame.dds")
+    if self.phoneFrame == nil or self.phoneFrame == 0 then
+        self.phoneFrame = nil
+        print("[RoleplayPhone] WARN: Test_Phone_Pic.dds not found - using drawRect bezel")
+    else
+        print("[RoleplayPhone] Phone frame texture loaded OK")
+    end
 
     if self.whiteOverlay == nil or self.whiteOverlay == 0 then
         print("[RoleplayPhone] ERROR: failed to load white.dds")
@@ -182,8 +210,25 @@ function RoleplayPhone:init()
         print("[RoleplayPhone] WARN: ringtone.ogg not found - calls will be silent")
     end
 
+    -- ─── Aspect ratio detection ──────────────────────────────────────────────
+    -- g_screenWidth / g_screenHeight are FS25 globals, available after engine init.
+    -- Reference aspect ratio is 16:9 — all layout constants were authored for it.
+    local sw = g_screenWidth  or 1920
+    local sh = g_screenHeight or 1080
+    self.actualAR = sw / sh                       -- e.g. 1.778 (16:9) or 3.556 (32:9)
+    self.arScale  = (16 / 9) / self.actualAR      -- 1.0 on 16:9, ~0.5 on 32:9
+    print(string.format("[RoleplayPhone] Screen %dx%d  AR=%.3f  arScale=%.3f",
+        sw, sh, self.actualAR, self.arScale))
+
+    -- Apply aspect correction to layout rectangles
+    local baseW = 0.220   -- designed for 16:9
+    self.PHONE.w = baseW * self.arScale
+    self.PHONE.x = 0.5 - self.PHONE.w / 2
+    self.BIG.w   = baseW * self.arScale
+    self.BIG.x   = 0.5 - self.BIG.w / 2
+
     -- Init notification system — shares our white overlay for drawing
-    NotificationManager:init(self.whiteOverlay, modDirectory)
+    NotificationManager:init(self.whiteOverlay, modDirectory, self.arScale)
 
     -- Load per-player cosmetic settings (time format, temp, wallpaper, battery)
     self:loadSettings()
@@ -866,13 +911,18 @@ function RoleplayPhone:draw()
     elseif self.state == self.STATE.SETTINGS then
         self:drawSettings()
     end
+
+    -- Phone frame overlay: drawn LAST on top of ALL screens
+    self:drawPhoneFrame()
 end
 
 -- ─── Big screen shell (used by invoices, contacts, ping) ─────────────────────
 function RoleplayPhone:drawBigScreen()
     local s = self.BIG
-    -- Phone body border
-    self:drawRect(s.x-0.007, s.y-0.007, s.w+0.014, s.h+0.014, 0.04, 0.04, 0.05, 1.0)
+    -- Phone body border (only if frame texture not available)
+    if not self.phoneFrame then
+        self:drawRect(s.x-0.007, s.y-0.007, s.w+0.014, s.h+0.014, 0.04, 0.04, 0.05, 1.0)
+    end
 
     -- Wallpaper background: use player's selected wallpaper (texture or colour swatch)
     local wp = self.WALLPAPERS[self.settings.wallpaperIndex] or self.WALLPAPERS[1]
@@ -884,9 +934,11 @@ function RoleplayPhone:drawBigScreen()
         self:drawRect(s.x, s.y, s.w, s.h, wp.r, wp.g, wp.b, 1.0)
     end
 
-    -- Notch
-    local nw = s.w * 0.18
-    self:drawRect(s.x + (s.w-nw)/2, s.y + s.h - 0.014, nw, 0.014, 0.01, 0.02, 0.03, 1.0)
+    -- Notch (only if frame texture not available)
+    if not self.phoneFrame then
+        local nw = s.w * 0.18
+        self:drawRect(s.x + (s.w-nw)/2, s.y + s.h - 0.014, nw, 0.014, 0.01, 0.02, 0.03, 1.0)
+    end
     -- Status bar
     self:drawStatusBar(s.x, s.y, s.w, s.h)
 end
@@ -907,20 +959,20 @@ function RoleplayPhone:drawStatusBar(px, py, pw, ph)
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(false)
     setTextColor(1, 1, 1, 1)
-    renderText(px + 0.014, barY, textSize, timeStr)
+    renderText(px + 0.014 * self.arScale, barY, textSize, timeStr)
 
     -- Right side: 4G, signal bars, battery — tight group from right edge
     setTextAlignment(RenderText.ALIGN_RIGHT)
-    renderText(px + pw - 0.042, barY, textSize, "4G")
-    renderText(px + pw - 0.060, barY, textSize, "|||")
+    renderText(px + pw - 0.042 * self.arScale, barY, textSize, "4G")
+    renderText(px + pw - 0.060 * self.arScale, barY, textSize, "|||")
 
     -- Battery widget: sits at far right, next to signal bars
     if self.settings.batteryVisible then
         local bat     = self.battery
         local pct     = bat.level / 100
-        local bw      = 0.013
+        local bw      = 0.013 * self.arScale
         local bh      = 0.007
-        local bx      = px + pw - 0.037
+        local bx      = px + pw - 0.037 * self.arScale
         local by      = barY + 0.003
         -- Outer shell
         self:drawRect(bx, by, bw, bh, 0.55, 0.55, 0.55, 1.0)
@@ -936,7 +988,7 @@ function RoleplayPhone:drawStatusBar(px, py, pw, ph)
         local fillW = math.max(0.001, (bw - 0.002) * pct)
         self:drawRect(bx + 0.001, by + 0.001, fillW, bh - 0.002, fr, fg, fb, 1.0)
         -- Nub on right
-        self:drawRect(bx + bw, by + 0.001, 0.002, bh - 0.002, 0.55, 0.55, 0.55, 1.0)
+        self:drawRect(bx + bw, by + 0.001, 0.002 * self.arScale, bh - 0.002, 0.55, 0.55, 0.55, 1.0)
         -- LOW BATTERY flash at <=15%
         if pct <= 0.15 then
             local flash = math.floor(getTimeSec() * 2) % 2 == 0
@@ -944,7 +996,7 @@ function RoleplayPhone:drawStatusBar(px, py, pw, ph)
                 setTextAlignment(RenderText.ALIGN_RIGHT)
                 setTextBold(false)
                 setTextColor(0.95, 0.15, 0.15, 1.0)
-                renderText(bx - 0.003, barY, 0.009, "LOW")
+                renderText(bx - 0.003 * self.arScale, barY, 0.009, "LOW")
             end
         end
     end
@@ -965,8 +1017,11 @@ function RoleplayPhone:drawPhoneHome()
     local dockH = 0.115
     local dockY = py + 0.006
 
-    -- Phone body (near-black bezel)
-    self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
+    -- Phone body: drawn by frame texture overlay (see drawPhoneFrame at end of this function).
+    -- If the DDS isn't loaded, fall back to the plain drawRect bezel.
+    if not self.phoneFrame then
+        self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
+    end
 
     -- ── Screen background ────────────────────────────────────────────────────
     if self.homePage == 1 then
@@ -991,9 +1046,11 @@ function RoleplayPhone:drawPhoneHome()
         end
     end
 
-    -- Notch
-    local nw = pw * 0.20
-    self:drawRect(cx - nw/2, py + ph - 0.010, nw, 0.010, 0.01, 0.01, 0.01, 1.0)
+    -- Notch: only draw if frame texture isn't handling it
+    if not self.phoneFrame then
+        local nw = pw * 0.20
+        self:drawRect(cx - nw/2, py + ph - 0.010, nw, 0.010, 0.01, 0.01, 0.01, 1.0)
+    end
 
     -- Status bar (always)
     self:drawStatusBar(px, py, pw, ph)
@@ -1087,6 +1144,37 @@ function RoleplayPhone:drawPhoneHome()
         setTextColor(0.85, 0.87, 0.90, 0.75)
         renderText(cx, dockY + dockH - 0.008, 0.008, "Click outside to close")
     end
+
+    -- Frame texture used to be drawn here, now drawn in main draw() for all screens
+end
+
+-- ─── Phone frame texture overlay ─────────────────────────────────────────────
+-- Renders Test_Phone_Pic.dds on top of screen content.
+-- The frame is sized so its transparent screen hole exactly covers PHONE.x/y/w/h.
+-- Tune FRAME_SCREEN pixel values at the top of this file to shift/resize the hole.
+function RoleplayPhone:drawPhoneFrame()
+    if not self.phoneFrame then return end
+
+    local f   = self.FRAME_SCREEN
+    local px  = self.PHONE.x
+    local py  = self.PHONE.y
+    local pw  = self.PHONE.w
+    local ph  = self.PHONE.h
+
+    -- Fraction of the image taken up by the screen hole
+    local holeW = (f.R - f.L) / f.imgW   -- e.g. (596-178)/900 = 0.4644
+    local holeH = (f.T - f.B) / f.imgH   -- e.g. (743-97)/900  = 0.7178
+    local leftF = f.L / f.imgW            -- left margin fraction
+    local botF  = f.B / f.imgH            -- bottom margin fraction
+
+    -- Scale frame so hole == (pw, ph), then offset so hole origin == (px, py)
+    local fw = pw / holeW
+    local fh = ph / holeH
+    local fx = px - fw * leftF
+    local fy = py - fh * botF
+
+    setOverlayColor(self.phoneFrame, 1, 1, 1, 1)
+    renderOverlay(self.phoneFrame, fx, fy, fw, fh)
 end
 
 -- ─── Weather widget (page 1 center) ──────────────────────────────────────────
@@ -1157,7 +1245,7 @@ end
 function RoleplayPhone:drawAppGrid(px, py, pw, ph, dockY, dockH)
     local cx      = px + pw / 2
     local cols    = 3
-    local iconSz  = 0.038
+    local iconSz  = 0.038 * self.arScale
     local iconGap = (pw - cols * iconSz) / (cols + 1)
     local startY  = dockY + dockH + 0.035  -- start just above dock area, working upward
 
@@ -1208,7 +1296,7 @@ function RoleplayPhone:drawDockIcons(px, py, pw, ph, dockY, dockH)
     local margin = 0.010
     local gap    = 0.008
     local iconSz = (pw - margin * 2 - gap * (nApps - 1)) / nApps  -- width in screen coords
-    local iconH  = iconSz * (16 / 9)  -- compensate for 16:9 aspect ratio so boxes look square
+    local iconH  = iconSz * self.actualAR  -- compensate for aspect ratio so boxes look square
     local totalW = nApps * iconSz + (nApps - 1) * gap
     local startX = cx - totalW / 2
     local iconY  = dockY + (dockH - iconH) / 2
@@ -1267,7 +1355,7 @@ function RoleplayPhone:drawInvoicesList()
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
 
     -- Back button
-    self:drawButton("btn_back", px+0.010, headerY+0.010, 0.055, 0.030,
+    self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
                     "< Back", 0.18, 0.20, 0.28, 0.011)
 
     -- Title
@@ -1376,9 +1464,9 @@ function RoleplayPhone:drawInvoiceRow(inv, x, y, w, h, index)
     self:drawRect(x, y, w, h, shade, shade+0.015, shade+0.030, 1.0)
 
     -- Status badge (right side)
-    local badgeW = 0.075
+    local badgeW = 0.075 * self.arScale
     local badgeH = 0.022
-    local badgeX = x + w - badgeW - 0.008
+    local badgeX = x + w - badgeW - 0.008 * self.arScale
     local badgeY = y + h - badgeH - 0.008
     local sr, sg, sb = self:getStatusColor(inv.status)
     self:drawRect(badgeX, badgeY, badgeW, badgeH, sr, sg, sb, 1.0)
@@ -1388,27 +1476,28 @@ function RoleplayPhone:drawInvoiceRow(inv, x, y, w, h, index)
     renderText(badgeX + badgeW/2, badgeY + 0.004, 0.009, inv.status or "PENDING")
 
     -- Invoice # and date
+    local indent = 0.010 * self.arScale
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(true)
     setTextColor(0.75, 0.85, 1.0, 1.0)
-    renderText(x + 0.010, y + h - 0.020, 0.011, string.format("INV #%04d", inv.id or 0))
+    renderText(x + indent, y + h - 0.020, 0.011, string.format("INV #%04d", inv.id or 0))
 
     setTextBold(false)
     setTextColor(0.5, 0.55, 0.65, 0.8)
-    renderText(x + 0.010, y + h - 0.034, 0.010,
+    renderText(x + indent, y + h - 0.034, 0.010,
                string.format("Day %s", tostring(inv.createdDate or "?")))
 
     -- Category
     setTextColor(0.85, 0.85, 0.95, 0.9)
     local cat = inv.category or "Uncategorized"
     if #cat > 28 then cat = cat:sub(1,26) .. ".." end
-    renderText(x + 0.010, y + 0.030, 0.011, cat)
+    renderText(x + indent, y + 0.030, 0.011, cat)
 
     -- Amount (right side, larger)
     setTextAlignment(RenderText.ALIGN_RIGHT)
     setTextBold(true)
     setTextColor(0.35, 0.95, 0.45, 1.0)
-    renderText(x + w - 0.010, y + 0.028, 0.015,
+    renderText(x + w - indent, y + 0.028, 0.015,
                string.format("$%s", self:formatMoney(inv.amount or 0)))
 
     -- Register hitbox
@@ -1433,7 +1522,7 @@ function RoleplayPhone:drawInvoiceDetail()
     local headerH = 0.05
     local headerY = py + ph - 0.055 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-    self:drawButton("btn_back", px+0.010, headerY+0.010, 0.055, 0.030,
+    self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
                     "< Back", 0.18, 0.20, 0.28, 0.011)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
@@ -1522,7 +1611,7 @@ function RoleplayPhone:drawCreateInvoice()
     local headerH = 0.05
     local headerY = py + ph - 0.055 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-    self:drawButton("btn_back", px+0.010, headerY+0.010, 0.055, 0.030,
+    self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
                     "< Back", 0.18, 0.20, 0.28, 0.011)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
@@ -2197,7 +2286,7 @@ function RoleplayPhone:drawCallScreen()
     local call = self.call
 
     -- Popup dimensions — left side, between minimap and keybinding list
-    local pw  = 0.165
+    local pw  = 0.165 * self.arScale
     local ph  = 0.140
     local px  = 0.01            -- left edge with small margin
     local py  = 0.38            -- vertically between minimap (bottom) and keybindings (top)
@@ -2239,7 +2328,7 @@ function RoleplayPhone:drawCallScreen()
     end
 
     -- Decorative buttons (visual only — F8 does the actual action)
-    local btnW = 0.075
+    local btnW = 0.075 * self.arScale
     local btnH = 0.032
     local btnY = py + 0.018
     if self.state == self.STATE.CALL_INCOMING then
@@ -2273,8 +2362,10 @@ function RoleplayPhone:drawContacts()
     local pw = s.w
     local ph = s.h
 
-    -- Phone bezel + shell background
-    self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
+    -- Phone bezel (only if frame texture not available)
+    if not self.phoneFrame then
+        self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
+    end
     self:drawRect(px, py, pw, ph, 0.06, 0.07, 0.10, 0.97)
 
     local contentY = py + ph - 0.012
@@ -2285,7 +2376,7 @@ function RoleplayPhone:drawContacts()
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
 
     -- Back button
-    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045, 0.026,
+    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
         "< Back", 0.18, 0.20, 0.28, 0.010)
 
     -- Title
@@ -2295,7 +2386,7 @@ function RoleplayPhone:drawContacts()
     renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Contacts")
 
     -- Add button (top-right)
-    self:drawButton("btn_add_contact", px + pw - 0.068, headerY + 0.008, 0.062, 0.026,
+    self:drawButton("btn_add_contact", px + pw - 0.068 * self.arScale, headerY + 0.008, 0.062 * self.arScale, 0.026,
         "+ Add", 0.10, 0.38, 0.18, 0.012)
 
     -- ── Contact list ──────────────────────────────────────────────────────────
@@ -2404,7 +2495,7 @@ function RoleplayPhone:drawContactDetail()
     local headerH = 0.042
     local headerY = py + ph - 0.012 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.08, 0.11, 0.18, 1.0)
-    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045, 0.026,
+    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
         "< Back", 0.12, 0.15, 0.22, 0.010)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
@@ -2413,7 +2504,7 @@ function RoleplayPhone:drawContactDetail()
 
     -- Avatar
     local avSz = pw * 0.25
-    local avH  = avSz * (16/9)
+    local avH  = avSz * self.actualAR
     local avX  = px + pw/2 - avSz/2
     local avY  = headerY - avH - 0.018
     self:drawRect(avX, avY, avSz, avH, 0.15, 0.32, 0.60, 1.0)
@@ -2488,11 +2579,11 @@ function RoleplayPhone:drawMessageThread()
     local headerY = py + ph - 0.055 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.07, 0.10, 0.16, 1.0)
 
-    self:drawButton("btn_back", px + 0.010, headerY + 0.016, 0.055, 0.030,
+    self:drawButton("btn_back", px + 0.006, headerY + 0.016, 0.055 * self.arScale, 0.030,
         "< Back", 0.15, 0.18, 0.26, 0.011)
 
     -- Call button (top right of header)
-    self:drawButton("btn_call", px + pw - 0.080, headerY + 0.016, 0.068, 0.030,
+    self:drawButton("btn_call", px + pw - 0.080 * self.arScale, headerY + 0.016, 0.068 * self.arScale, 0.030,
         "Call", 0.10, 0.48, 0.22, 0.011)
 
     -- Avatar (small, in header)
@@ -2518,7 +2609,7 @@ function RoleplayPhone:drawMessageThread()
     -- ── Compose bar (bottom) ──────────────────────────────────────────────────
     local composeH  = 0.052
     local composeY  = py + 0.006
-    local sendBtnW  = 0.060
+    local sendBtnW  = 0.060 * self.arScale
     local fieldX    = px + 0.010
     local fieldW    = pw - sendBtnW - 0.022
     local compose   = self.messageCompose
@@ -2630,7 +2721,7 @@ function RoleplayPhone:drawContactCreate()
     local headerY = contentY - headerH
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
 
-    self:drawButton("btn_back", px + 0.010, headerY + 0.010, 0.055, 0.030,
+    self:drawButton("btn_back", px + 0.006, headerY + 0.010, 0.055 * self.arScale, 0.030,
         "< Back", 0.18, 0.20, 0.28, 0.011)
 
     setTextAlignment(RenderText.ALIGN_CENTER)
@@ -2707,7 +2798,8 @@ function RoleplayPhone:drawSettings()
 
     -- Header
     self:drawRect(px, headerY, pw, headerH, 0.12, 0.08, 0.20, 1.0)
-    self:drawButton("btn_back", px + 0.010, headerY + 0.010, 0.055, 0.030,
+    local backW = 0.055 * self.arScale
+    self:drawButton("btn_back", px + 0.006, headerY + 0.010, backW, 0.030,
         "< Back", 0.16, 0.10, 0.24, 0.011)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
@@ -2716,9 +2808,10 @@ function RoleplayPhone:drawSettings()
 
     local cy     = headerY - 0.018
     local rowH   = 0.040
-    local optW   = 0.090
-    local optGap = 0.008
-    local indent = px + 0.018
+    local indent = px + 0.012
+    local usable = pw - 0.024               -- phone width minus left+right margin
+    local optGap = 0.006
+    local optW   = (usable - optGap) / 2    -- two buttons fill the row
     local labelW = pw * 0.45
 
     -- ── Section: Clock Format ─────────────────────────────────────────────────
@@ -2885,15 +2978,17 @@ function RoleplayPhone:drawCallsList()
     local pw = s.w
     local ph = s.h
 
-    -- Phone bezel + shell background
-    self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
+    -- Phone bezel (only if frame texture not available)
+    if not self.phoneFrame then
+        self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
+    end
     self:drawRect(px, py, pw, ph, 0.06, 0.07, 0.10, 0.97)
 
     -- Header
     local headerH = 0.042
     local headerY = py + ph - 0.012 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.08, 0.11, 0.18, 1.0)
-    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045, 0.026,
+    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
         "< Back", 0.12, 0.15, 0.22, 0.010)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)

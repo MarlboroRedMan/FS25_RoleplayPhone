@@ -54,12 +54,18 @@ NotificationManager.NOTIF = {
 NotificationManager.POPUP_LIFETIME = 300
 
 -- ─── Init ─────────────────────────────────────────────────────────────────────
-function NotificationManager:init(overlay, modDir)
+function NotificationManager:init(overlay, modDir, arScale)
     -- Reuse the white overlay from RoleplayPhone (already loaded)
     self.whiteOverlay = overlay
     self.modDir       = modDir
+    self.arScale      = arScale or 1.0
     self.queue        = {}
     self.badgeCount   = 0
+
+    -- Apply aspect ratio correction to HUD icon and popup widths
+    self.HUD.w   = 0.026 * self.arScale
+    self.NOTIF.w = 0.250 * self.arScale
+    self.NOTIF.x = 1.0 - self.NOTIF.w - 0.015  -- right-aligned with margin
 
     -- Drag state
     self.dragging      = false
