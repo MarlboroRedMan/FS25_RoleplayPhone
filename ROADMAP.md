@@ -51,7 +51,7 @@
 
 ---
 
-## ✅ v0.3.0 — Current Release
+## ✅ v0.3.0 — Released
 ### 🌤️ Weather App
 - Current conditions: temperature, condition label, wind speed/direction, cloud cover
 - ASCII condition symbol in current conditions card
@@ -81,6 +81,28 @@
 - Call popup Answer/Decline buttons fit correctly inside popup box
 - Settings labels (Temperature, Battery, Wallpaper) aligned correctly
 - Mod size reduced from 615 KB to 492 KB (dead textures removed, wallpaper recompressed)
+
+---
+
+## ✅ v0.3.1 — Current Release
+
+### 🖼️ New Wallpapers
+- 4 new photo wallpapers: Barn & Silos, Big Red Barn, Winter Red Barn, Hay Bales
+- Rose Gold color option added
+
+### ⚙️ Settings Overhaul
+- Settings screen split into tabbed layout: General and Wallpaper tabs
+- Dedicated full-screen wallpaper picker with arrow navigation and Apply button
+
+### 🌤️ Home Screen Weather Widget Redesign
+- Replaced big clock and Day/Season text with a real phone-style weather widget
+- Weather condition icon (8 DDS icons: Clear, Partly Cloudy, Cloudy, Rain, Heavy Rain, Snow, Storm, Hail)
+- Centered stack layout: icon → temperature → condition label → map name
+- Semi-transparent backdrop ensures readability on all wallpapers
+
+### 🔧 Keybind Fix
+- F8 answer/hangup now properly remappable via FS25's native Controls menu
+- Dynamic key hint in call popup reads the actual bound key from inputBinding.xml
 
 ---
 
