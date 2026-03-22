@@ -13,8 +13,7 @@
 
 ---
 
-## ✅ v0.2.0 — Current Release
-
+## ✅ v0.2.0 — Released
 ### 📱 Phone UI Overhaul
 - Redesigned dock with proper square icons (aspect ratio fix for FS25 coordinate system)
 - DDS texture icons for all dock apps
@@ -26,79 +25,89 @@
 - Stacks cleanly for multiple notifications
 - Draggable HUD icon
 - Auto-dismisses after a few seconds
-- Centralized — any part of the mod calls one function to trigger
 
 ### 📞 Call System
 - Call contacts directly from the phone
-- Compact non-freezing call popup (bottom-left, out of the way while driving)
+- Compact non-freezing call popup (bottom-left, works while driving)
 - F8 keybind to answer or hang up — works on foot AND in vehicles
 - 30 second auto-timeout on unanswered calls
 - Missed call notification
-- Caller shows contact name (not just farm name) if saved in contacts
-- Call history (current session)
-- Recent Calls dock button replaces Ping
+- Recent Calls history (current session)
 
 ### 💬 Messaging
 - Send text messages between farms
 - Conversation threads per contact
-- New message notification
-- Backspace works correctly in message compose
-- Message history (current session)
+- Message history (current session only)
 
 ### 📇 Contacts Overhaul
-- Contacts list on small phone screen
-- Contact detail screen with Call, Message, and Delete Contact buttons
-- Message thread on full screen
-- Backspace works in all contact form fields
-- Add and delete contacts
+- Contact detail screen with Call, Message, and Delete buttons
+- Full message thread screen
 
 ### ⚙️ Settings Screen
-- Wallpaper selection
+- Wallpaper selection (7 options)
 - Time format (12hr / 24hr)
 - Temperature units (°F / °C)
 - Battery display toggle
 
-### 🔧 Multiplayer Fixes
-- Keybind registration moved to after BaseMission.enterGame fires
-- Phone UI and notifications gated behind inputRegistered (no rendering during map load)
-- Incoming calls no longer freeze the receiving player
-- Outgoing caller stays fully mobile during call
+---
+
+## ✅ v0.3.0 — Current Release
+### 🌤️ Weather App
+- Current conditions: temperature, condition label, wind speed/direction, cloud cover
+- ASCII condition symbol in current conditions card
+- 5-day forecast with real condition data read directly from save XML
+- Temperature ranges pulled from map's weather variation data (same source as base game)
+- Day labels match your time settings (month names at 1 day/period, day numbers at 7 days/period)
+- Forecast synced to clients via network event on connect
+- Humidity and ground wetness shown automatically if exposed by weather mods
+
+### 🔐 Farm Manager Permissions
+- Uses FS25's native farm manager permission system — no configuration needed
+- Farm hands: view only (invoices, weather, contacts)
+- Farm managers: full access (create/pay/reject invoices, send messages, calls)
+- Server admin (host / master user): full access across all farms
+- Permissions are farm-specific — leaving a farm removes permissions instantly
+
+### 🏗️ Code Refactor
+- Split monolithic RoleplayPhone.lua into separate app files
+- scripts/apps/WeatherApp.lua, InvoicesApp.lua, ContactsApp.lua, CallsApp.lua, SettingsApp.lua
+- Core file reduced from 3,482 to ~2,000 lines
+- Easier to maintain and extend going forward
+
+### 🐛 Bug Fixes & Polish
+- Spectator farm (Farm 14) no longer appears in invoice send-to list
+- Contact detail screen: farm name removed, shows phone and notes only
+- Message thread header: simplified to just contact name
+- Call popup Answer/Decline buttons fit correctly inside popup box
+- Settings labels (Temperature, Battery, Wallpaper) aligned correctly
+- Mod size reduced from 615 KB to 492 KB (dead textures removed, wallpaper recompressed)
 
 ---
 
-## 🔮 v0.3.0 — Planned
-- Weather app — current conditions, 7-day forecast, pulls from FS25 weather/season API
-- Market Prices app — crop prices with color coding (above/below average)
-- Property Management app — list rentals, set prices, track tenants, auto-generate invoices
-- Used Vehicle Marketplace app — player listings and broker listings (BuyUsedEquipment compatible)
+## 🔮 v0.3.x — Planned Polish
+- Market app (combined: crop prices + used vehicle marketplace + property management)
 - Additional wallpaper options
+- Weather widget icon on home screen page 1
 
 ---
 
 ## 🔮 v0.4.0 — UsedPlus Integration
-UsedPlus (github.com/XelaNull/FS25_UsedPlus) is a comprehensive finance and marketplace mod with a public API. Once it reaches a stable release, integrating with it would allow our phone to become the central hub for the entire RP economy.
+UsedPlus (github.com/XelaNull/FS25_UsedPlus) is a comprehensive finance and marketplace mod.
+Once stable, integrating with it would make our phone the central hub for the entire RP economy.
 
 **Planned apps powered by UsedPlus API:**
 
 ### Credit Score App
-- Display farm's current FICO-style credit score (300-850)
-- Show score history and what's affecting it
-- Paying invoices through our mod reports payments to UsedPlus and builds credit
+- Display farm's FICO-style credit score
+- Paying invoices through our mod builds credit history
 
 ### Finance Manager App
 - View all active loans, leases, and financing deals
-- See monthly payments, remaining balances, and terms
 - Make payments directly from the phone
-
-### Cash Loans App
-- Apply for cash loans against collateral
-- View loan terms based on current credit score
 
 ### Vehicle DNA App
 - Inspect a vehicle's hidden DNA (lemon, workhorse, legendary)
 - View reliability rating, hours, damage, wear
-
-**The big picture:** Invoice payments through our mod feed into UsedPlus credit scores. Farms that pay rent on time, settle invoices, and honor leases build good credit and unlock better financing rates. The entire server economy becomes interconnected.
 
 ---
 
