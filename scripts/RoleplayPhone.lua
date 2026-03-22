@@ -1,4 +1,4 @@
--- scripts/RoleplayPhone.lua
+﻿-- scripts/RoleplayPhone.lua
 -- RP Phone UI - Draw-based, no XML GUI required
 -- Pattern: Mission00 appended functions
 
@@ -23,6 +23,7 @@ RoleplayPhone.STATE = {
     CALL_ACTIVE    = 11,
     SETTINGS       = 12,
     MESSAGE_THREAD = 13,
+    WEATHER        = 14,
 }
 
 -- ─── Tab constants ────────────────────────────────────────────────────────────
@@ -66,8 +67,8 @@ RoleplayPhone.homePageCount  = 2    -- total pages (grows as we add apps)
 -- Each entry: { id, label, color {r,g,b}, icon (optional overlay ref) }
 RoleplayPhone.GRID_APPS = {
     -- Page 2
-    { id="weather",  label="Weather",  page=2, color={0.15, 0.45, 0.75} },
-    { id="market",   label="Market",   page=2, color={0.20, 0.60, 0.30} },
+    { id="weather",  label="Weather",  page=2, color={0.15, 0.45, 0.75}, icon="iconWeather" },
+    { id="market",   label="Market",   page=2, color={0.20, 0.60, 0.30}, icon="iconMarket"  },
 }
 
 -- ─── Dock apps (always visible, bottom) ──────────────────────────────────────
@@ -181,6 +182,8 @@ function RoleplayPhone:init()
     self.iconContacts = createImageOverlay(tex .. "icon_contacts.dds")
     self.iconCalls    = createImageOverlay(tex .. "recent_call.dds")
     self.iconSettings = createImageOverlay(tex .. "icon_settings.dds")
+    self.iconWeather  = createImageOverlay(tex .. "weather.dds")
+    self.iconMarket   = nil  -- no icon yet
     self.phoneFrame   = createImageOverlay(tex .. "phone_frame.dds")
     if self.phoneFrame == nil or self.phoneFrame == 0 then
         self.phoneFrame = nil
@@ -781,8 +784,6 @@ function RoleplayPhone:resolveFarmId(farmName)
 end
 
 function RoleplayPhone:getAvailableFarms()
-    -- Return cached list if available - cache is cleared every time phone opens
-    -- so this only persists during a single open session, not across opens
     if self._farmCache and #self._farmCache > 0 then
         return self._farmCache
     end
@@ -790,21 +791,55 @@ function RoleplayPhone:getAvailableFarms()
     local result  = {}
     local seenIds = {}
 
-    -- Primary: g_farmManager is the correct global (g_currentMission.farmManager is often nil)
-    if g_farmManager then
-        for _, farm in pairs(g_farmManager:getFarms()) do
-            if farm.farmId ~= FarmManager.SPECTATOR_FARM_ID then
-                table.insert(result, {
-                    farmId = farm.farmId,
-                    name   = (farm.name and farm.name ~= "") and farm.name
-                                or ("Farm " .. tostring(farm.farmId))
-                })
-                seenIds[farm.farmId] = true
+    -- Build whitelist from farms.xml — only real player farms appear here
+    -- This is the ground truth; g_farmManager also contains internal/spectator farms
+    local xmlWhitelist = {}
+    if g_server ~= nil and g_currentMission and g_currentMission.missionInfo then
+        local dir = g_currentMission.missionInfo.savegameDirectory
+        if dir then
+            local xmlFile = loadXMLFile("farmsXML", dir .. "/farms.xml")
+            if xmlFile and xmlFile ~= 0 then
+                local i = 0
+                while true do
+                    local key    = string.format("farms.farm(%d)", i)
+                    if not hasXMLProperty(xmlFile, key) then break end
+                    local farmId = getXMLInt(xmlFile, key .. "#farmId")
+                    local name   = getXMLString(xmlFile, key .. "#name")
+                    if farmId and farmId > 0 then
+                        xmlWhitelist[farmId] = (name and name ~= "") and name
+                                               or ("Farm " .. tostring(farmId))
+                    end
+                    i = i + 1
+                end
+                delete(xmlFile)
             end
         end
     end
 
-    -- Client fallback: knownFarms sent by host (includes offline farms)
+    -- Primary: g_farmManager — but only include farms that are in farms.xml
+    if g_farmManager then
+        for _, farm in pairs(g_farmManager:getFarms()) do
+            local fid = farm.farmId
+            if fid and fid > 0 and xmlWhitelist[fid] then
+                table.insert(result, {
+                    farmId = fid,
+                    name   = (farm.name and farm.name ~= "") and farm.name
+                                or xmlWhitelist[fid]
+                })
+                seenIds[fid] = true
+            end
+        end
+    end
+
+    -- Fill in any farms.xml entries that g_farmManager didn't return (offline farms)
+    for fid, name in pairs(xmlWhitelist) do
+        if not seenIds[fid] then
+            table.insert(result, { farmId=fid, name=name })
+            seenIds[fid] = true
+        end
+    end
+
+    -- Client fallback: knownFarms sent by host on connect
     if self.knownFarms then
         for _, farm in ipairs(self.knownFarms) do
             if not seenIds[farm.farmId] then
@@ -814,40 +849,10 @@ function RoleplayPhone:getAvailableFarms()
         end
     end
 
-    -- Host supplement: farms.xml picks up any OFFLINE farms not in farmManager
-    if g_server ~= nil and g_currentMission and g_currentMission.missionInfo then
-        local dir = g_currentMission.missionInfo.savegameDirectory
-        if dir then
-            local xmlFile = loadXMLFile("farmsXML", dir .. "/farms.xml")
-            if xmlFile and xmlFile ~= 0 then
-                local i = 0
-                while true do
-                    local key = string.format("farms.farm(%d)", i)
-                    if not hasXMLProperty(xmlFile, key) then break end
-                    local farmId = getXMLInt(xmlFile, key .. "#farmId")
-                    local name   = getXMLString(xmlFile, key .. "#name")
-                    if farmId and farmId ~= FarmManager.SPECTATOR_FARM_ID
-                    and not seenIds[farmId] then
-                        table.insert(result, {
-                            farmId = farmId,
-                            name   = (name and name ~= "") and name
-                                        or ("Farm " .. tostring(farmId))
-                        })
-                        seenIds[farmId] = true
-                    end
-                    i = i + 1
-                end
-                delete(xmlFile)
-            end
-        end
-    end
-
     if #result == 0 then
         table.insert(result, { farmId=1, name="Farm 1" })
     end
     table.sort(result, function(a, b) return a.farmId < b.farmId end)
-
-    -- Cache the result for this open session (cleared when phone opens)
     self._farmCache = result
     return result
 end
@@ -910,28 +915,272 @@ function RoleplayPhone:draw()
         self:drawCallsList()
     elseif self.state == self.STATE.SETTINGS then
         self:drawSettings()
+    elseif self.state == self.STATE.WEATHER then
+        self:drawBigScreen()
+        self:drawWeatherApp()
     end
 
     -- Phone frame overlay: drawn LAST on top of ALL screens
     self:drawPhoneFrame()
 end
 
--- ─── Big screen shell (used by invoices, contacts, ping) ─────────────────────
+-- ─── Permission system ───────────────────────────────────────────────────────
+-- Uses FS25's native farm manager permission — the same system the game uses
+-- for buy/sell vehicle rights in the multiplayer overview screen.
+-- Permissions are automatically farm-specific: if a player leaves their farm
+-- their manager rights don't follow them — exactly like the base game.
+--
+-- Permission table:
+--   Regular player (farm hand) : view only
+--   Farm manager               : post, act (pay/accept/reject), delete own
+--   Server host / master user  : full access
+
+function RoleplayPhone:isFarmManager()
+    if not g_currentMission then return false end
+    -- Server host always has full access
+    if g_currentMission:getIsServer() then return true end
+    -- G-Portal / master user always has full access
+    if g_currentMission.isMasterUser then return true end
+    -- Check FS25 native farm manager permission
+    -- Try both method and direct property access for compatibility
+    if g_currentMission.getHasPlayerPermission then
+        local ok, result = pcall(function()
+            return g_currentMission:getHasPlayerPermission("farmManager")
+        end)
+        if ok and result then return true end
+    end
+    -- Fallback: check userPermissions directly if available
+    if g_currentMission.userPermissions then
+        local ok, result = pcall(function()
+            return g_currentMission.userPermissions:hasPermission("farmManager")
+        end)
+        if ok and result then return true end
+    end
+    return false
+end
+
+function RoleplayPhone:canPost()
+    return self:isFarmManager()
+end
+
+function RoleplayPhone:canAct()
+    return self:isFarmManager()
+end
+
+function RoleplayPhone:canDeleteAny()
+    -- host/master user only — farm managers can only delete their own
+    if not g_currentMission then return false end
+    return g_currentMission:getIsServer() or (g_currentMission.isMasterUser == true)
+end
+
+-- ─── Shared phone background helper ─────────────────────────────────────────
+-- Draws the background slightly oversized to fill flush to frame bezel edges.
+function RoleplayPhone:drawPhoneBackground(r, g, b, a)
+    local s   = self.BIG
+    local pad = 0.006
+    self:drawRect(s.x - pad * self.arScale, s.y - pad,
+                  s.w + pad * self.arScale * 2, s.h + pad * 2, r, g, b, a or 1.0)
+end
+
+-- ─── Weather forecast XML reader ─────────────────────────────────────────────
+-- Reads environment.xml from the save and returns:
+--   { [relDay] = { typeName="CLOUDY", minTemp=8, maxTemp=14 } }
+-- Map weather variations are read once and cached for temperature lookup.
+RoleplayPhone._forecastCache      = nil
+RoleplayPhone._forecastCacheDay   = -1
+RoleplayPhone._mapWeatherTemps    = nil  -- reset forces re-read with fixed indexing
+
+function RoleplayPhone:_loadMapWeatherTemps()
+    if self._mapWeatherTemps then return self._mapWeatherTemps end
+    self._mapWeatherTemps = {}
+    -- Only host can load map files
+    if g_server == nil then return self._mapWeatherTemps end
+
+    -- Try known environment.xml paths — base game maps, common mod maps
+    -- mapFile is often nil so we just try all candidates
+    local mapFile = g_currentMission and g_currentMission.missionInfo
+                    and g_currentMission.missionInfo.mapFile
+
+    -- Build the install-relative data path from the mod's own directory
+    -- modDirectory is like "C:/path/to/mods/FS25_RoleplayPhone/"
+    -- Game data is typically 3 levels up then into data/ but that varies.
+    -- Use Utils.getFilename if available, otherwise try $data directly.
+    local function tryLoad(tag, path)
+        local f = loadXMLFile(tag, path)
+        if f and f ~= 0 then return f end
+        return nil
+    end
+
+    local xmlFile = nil
+    local usedPath = nil
+
+    -- Try $data prefix (works in most FS25 contexts)
+    for _, rel in ipairs({"maps/mapUS/config/environment.xml",
+                           "maps/mapEU/config/environment.xml",
+                           "maps/mapAS/config/environment.xml"}) do
+        local path = "$data/" .. rel
+        local f = tryLoad("RP_MapEnv_" .. rel:gsub("[/.]","_"), path)
+        if f then xmlFile = f; usedPath = path; break end
+    end
+
+    -- Fallback: try absolute path using game install dir from Utils
+    if not xmlFile then
+        local installDir = nil
+        if Utils and Utils.getFilename then
+            installDir = Utils.getFilename("$data/")
+        end
+        if installDir then
+            for _, rel in ipairs({"maps/mapUS/config/environment.xml",
+                                   "maps/mapEU/config/environment.xml"}) do
+                local path = installDir .. rel
+                local f = tryLoad("RP_MapEnvAbs_" .. rel:gsub("[/.]","_"), path)
+                if f then xmlFile = f; usedPath = path; break end
+            end
+        end
+    end
+
+    if not xmlFile then
+        Logging.info("[RoleplayPhone] Could not load map environment.xml — using built-in temp ranges")
+        -- Built-in fallback: typical FS25 mapUS temperature ranges per season/type
+        self._mapWeatherTemps = {
+            SPRING = {
+                SUN    = {{min=10,max=18},{min=10,max=17},{min=11,max=16},{min=10,max=15}},
+                CLOUDY = {{min=9,max=14},{min=8,max=13},{min=8,max=13},{min=7,max=12}},
+                RAIN   = {{min=7,max=13},{min=6,max=12},{min=6,max=11},{min=5,max=10}},
+            },
+            SUMMER = {
+                SUN    = {{min=18,max=28},{min=17,max=27},{min=16,max=26},{min=15,max=25}},
+                CLOUDY = {{min=15,max=22},{min=14,max=21},{min=13,max=20},{min=12,max=19}},
+                RAIN   = {{min=13,max=20},{min=12,max=19},{min=11,max=18},{min=10,max=17}},
+            },
+            AUTUMN = {
+                SUN    = {{min=8,max=16},{min=7,max=15},{min=6,max=14},{min=5,max=13}},
+                CLOUDY = {{min=5,max=12},{min=4,max=11},{min=4,max=11},{min=3,max=10}},
+                RAIN   = {{min=4,max=10},{min=3,max=9},{min=2,max=8},{min=1,max=7}},
+                SNOW   = {{min=-2,max=2},{min=-3,max=1},{min=-4,max=0},{min=-5,max=-1}},
+            },
+            WINTER = {
+                SUN    = {{min=-2,max=4},{min=-3,max=3},{min=-4,max=2},{min=-5,max=1}},
+                CLOUDY = {{min=-4,max=1},{min=-5,max=0},{min=-6,max=-1},{min=-7,max=-2}},
+                SNOW   = {{min=-8,max=-2},{min=-9,max=-3},{min=-10,max=-4},{min=-11,max=-5}},
+            },
+        }
+        return self._mapWeatherTemps
+    end
+    Logging.info("[RoleplayPhone] Loaded map env from: " .. tostring(usedPath))
+
+    local seasonIdx = 0
+    while true do
+        local sKey   = string.format("environment.weather.season(%d)", seasonIdx)
+        local season = getXMLString(xmlFile, sKey .. "#name")
+        if season == nil then break end
+        season = season:upper()
+        self._mapWeatherTemps[season] = {}
+
+        local objIdx = 0
+        while true do
+            local oKey    = string.format("%s.object(%d)", sKey, objIdx)
+            local typeName = getXMLString(xmlFile, oKey .. "#typeName")
+            if typeName == nil then break end
+            typeName = typeName:upper()
+            self._mapWeatherTemps[season][typeName] = {}
+
+            local varIdx = 0
+            while true do
+                local vKey   = string.format("%s.variation(%d)", oKey, varIdx)
+                local minT   = getXMLFloat(xmlFile, vKey .. "#minTemperature")
+                if minT == nil then break end
+                local maxT   = getXMLFloat(xmlFile, vKey .. "#maxTemperature") or minT
+                -- Store at 1-based index to match save XML variationIndex (which is 1-based)
+                self._mapWeatherTemps[season][typeName][varIdx + 1] = { min=minT, max=maxT }
+                varIdx = varIdx + 1
+            end
+            objIdx = objIdx + 1
+        end
+        seasonIdx = seasonIdx + 1
+    end
+
+    delete(xmlFile)
+    Logging.info("[RoleplayPhone] Loaded map weather temps for " .. seasonIdx .. " seasons")
+    return self._mapWeatherTemps
+end
+
+function RoleplayPhone:getForecastFromXML()
+    local env        = g_currentMission and g_currentMission.environment
+    local currentDay = env and env.currentDay or 0
+
+    -- Check cache first — clients get forecast via network event, not by reading files
+    if self._forecastCacheDay == currentDay and self._forecastCache then
+        return self._forecastCache
+    end
+
+    -- Clients can't read the host's savegame directory
+    if g_server == nil then return {} end
+    local currentDay = env and env.currentDay or 0
+    if self._forecastCacheDay ~= currentDay then
+        self._forecastCache    = nil
+        self._forecastCacheDay = currentDay
+    end
+    if self._forecastCache then return self._forecastCache end
+
+    local dir = g_currentMission and g_currentMission.missionInfo
+                and g_currentMission.missionInfo.savegameDirectory
+    if not dir then return {} end
+
+    local xmlFile = loadXMLFile("RP_WeatherXML", dir .. "/environment.xml")
+    if not xmlFile or xmlFile == 0 then return {} end
+
+    -- Load map temperature ranges (cached after first call)
+    local mapTemps = self:_loadMapWeatherTemps()
+
+    local forecast = {}
+    local i = 0
+    while true do
+        local key      = string.format("environment.weather.forecast.instance(%d)", i)
+        local typeName = getXMLString(xmlFile, key .. "#typeName")
+        if typeName == nil then break end
+        local startDay   = getXMLInt(xmlFile, key .. "#startDay") or 0
+        local season     = getXMLString(xmlFile, key .. "#season") or "SPRING"
+        local varIdx     = getXMLInt(xmlFile, key .. "#variationIndex") or 1
+        local relDay     = startDay - currentDay
+
+        if relDay >= 0 and relDay <= 6 and forecast[relDay] == nil then
+            local tn = typeName:upper()
+            local minT, maxT = nil, nil
+            local st = season:upper()
+            if mapTemps[st] and mapTemps[st][tn] and mapTemps[st][tn][varIdx] then
+                minT = mapTemps[st][tn][varIdx].min
+                maxT = mapTemps[st][tn][varIdx].max
+            end
+            forecast[relDay] = { typeName=tn, minTemp=minT, maxTemp=maxT }
+        end
+        i = i + 1
+    end
+
+    delete(xmlFile)
+    self._forecastCache = forecast
+    return forecast
+end
+
+-- ─── Big screen shell (used by invoices, contacts, calls, weather, settings) ──
 function RoleplayPhone:drawBigScreen()
     local s = self.BIG
     -- Phone body border (only if frame texture not available)
     if not self.phoneFrame then
-        self:drawRect(s.x-0.007, s.y-0.007, s.w+0.014, s.h+0.014, 0.04, 0.04, 0.05, 1.0)
+        self:drawRect(s.x-0.009, s.y-0.009, s.w+0.014, s.h+0.018, 0.01, 0.01, 0.01, 1.0)
     end
 
-    -- Wallpaper background: use player's selected wallpaper (texture or colour swatch)
+    -- Wallpaper background — slightly oversized to fill flush to frame bezel edges
+    local pad = 0.006
+    local bx, by = s.x - pad * self.arScale, s.y - pad
+    local bw, bh = s.w + pad * self.arScale * 2, s.h + pad * 2
     local wp = self.WALLPAPERS[self.settings.wallpaperIndex] or self.WALLPAPERS[1]
     if wp.texture and self.wallpaper and self.wallpaper ~= 0 then
         setOverlayColor(self.wallpaper, 1, 1, 1, 1)
-        renderOverlay(self.wallpaper, s.x, s.y, s.w, s.h)
-        self:drawRect(s.x, s.y, s.w, s.h, 0.0, 0.0, 0.0, 0.45)
+        renderOverlay(self.wallpaper, bx, by, bw, bh)
+        self:drawRect(bx, by, bw, bh, 0.0, 0.0, 0.0, 0.45)
     else
-        self:drawRect(s.x, s.y, s.w, s.h, wp.r, wp.g, wp.b, 1.0)
+        self:drawRect(bx, by, bw, bh, wp.r, wp.g, wp.b, 1.0)
     end
 
     -- Notch (only if frame texture not available)
@@ -1241,7 +1490,7 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
     setTextBold(false)
 end
 
--- ─── App grid (page 2+) ───────────────────────────────────────────────────────
+-- ─── Weather App (full screen) ────────────────────────────────────────────────
 function RoleplayPhone:drawAppGrid(px, py, pw, ph, dockY, dockH)
     local cx      = px + pw / 2
     local cols    = 3
@@ -1271,11 +1520,19 @@ function RoleplayPhone:drawAppGrid(px, py, pw, ph, dockY, dockH)
         local ix = px + iconGap + col * (iconSz + iconGap)
         local iy = gridStartY - row * (rowH + 0.008)
 
-        -- Rounded square background
+        -- Icon background — aspect ratio corrected to look square
+        local iconH = iconSz * self.actualAR
         local c = app.color
-        self:drawRect(ix, iy, iconSz, iconSz, c[1], c[2], c[3], 1.0)
-        -- Subtle highlight top edge
-        self:drawRect(ix, iy + iconSz - 0.003, iconSz, 0.003, c[1]+0.2, c[2]+0.2, c[3]+0.2, 0.3)
+        self:drawRect(ix, iy, iconSz, iconH, c[1], c[2], c[3], 1.0)
+        -- Highlight strip at top
+        self:drawRect(ix, iy + iconH - 0.003, iconSz, 0.003, c[1]+0.2, c[2]+0.2, c[3]+0.2, 0.3)
+
+        -- Icon image overlay
+        local overlay = app.icon and self[app.icon] or nil
+        if overlay and overlay ~= 0 then
+            setOverlayColor(overlay, 1, 1, 1, 0.9)
+            renderOverlay(overlay, ix + iconSz*0.15, iy + iconH*0.15, iconSz*0.70, iconH*0.70)
+        end
 
         -- Label below
         setTextAlignment(RenderText.ALIGN_CENTER)
@@ -1284,7 +1541,7 @@ function RoleplayPhone:drawAppGrid(px, py, pw, ph, dockY, dockH)
         renderText(ix + iconSz/2, iy - 0.014, 0.009, app.label)
 
         -- Hitbox
-        self:addHitbox("grid_app_" .. app.id, ix, iy - 0.016, iconSz, iconSz + 0.016, { appId = app.id })
+        self:addHitbox("grid_app_" .. app.id, ix, iy - 0.016, iconSz, iconH + 0.016, { appId = app.id })
     end
 end
 
@@ -1341,363 +1598,6 @@ function RoleplayPhone:drawDockIcons(px, py, pw, ph, dockY, dockH)
 end
 
 -- ─── INVOICES LIST screen ─────────────────────────────────────────────────────
-function RoleplayPhone:drawInvoicesList()
-    local s        = self.BIG
-    local px       = s.x
-    local py       = s.y
-    local pw       = s.w
-    local ph       = s.h
-    local contentY = py + ph - 0.055  -- just below status bar
-
-    -- ── Header ──
-    local headerH  = 0.05
-    local headerY  = contentY - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-
-    -- Back button
-    self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.18, 0.20, 0.28, 0.011)
-
-    -- Title
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, headerY + 0.016, 0.016, "INVOICES")
-
-    -- ── Tabs ──
-    local tabY = headerY - 0.038
-    local tabH = 0.038
-    local tabW = pw / 2
-
-    -- Inbox tab
-    local inboxActive  = self.currentTab == self.TAB.INBOX
-    local outboxActive = self.currentTab == self.TAB.OUTBOX
-
-    self:drawRect(px,      tabY, tabW, tabH,
-                  inboxActive  and 0.13 or 0.09,
-                  inboxActive  and 0.18 or 0.11,
-                  inboxActive  and 0.28 or 0.15, 1.0)
-    self:drawRect(px+tabW, tabY, tabW, tabH,
-                  outboxActive and 0.13 or 0.09,
-                  outboxActive and 0.18 or 0.11,
-                  outboxActive and 0.28 or 0.15, 1.0)
-
-    -- Active tab indicator line
-    if inboxActive then
-        self:drawRect(px, tabY, tabW, 0.003, 0.30, 0.55, 1.00, 1.0)
-    else
-        self:drawRect(px+tabW, tabY, tabW, 0.003, 0.30, 0.55, 1.00, 1.0)
-    end
-
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(inboxActive)
-    setTextColor(1, 1, 1, inboxActive and 1.0 or 0.5)
-    renderText(px + tabW/2, tabY + 0.012, 0.013, "INBOX")
-
-    setTextBold(outboxActive)
-    setTextColor(1, 1, 1, outboxActive and 1.0 or 0.5)
-    renderText(px + tabW + tabW/2, tabY + 0.012, 0.013, "OUTBOX")
-
-    self:addHitbox("tab_inbox",  px,      tabY, tabW, tabH, {})
-    self:addHitbox("tab_outbox", px+tabW, tabY, tabW, tabH, {})
-
-    -- ── Invoice list area ──
-    local listTopY    = tabY - 0.006
-    local listBottomY = py + 0.015
-    local listH       = listTopY - listBottomY
-
-    -- Get invoices for current farm
-    local myFarmId = self:getMyFarmId()
-    local inbox    = self.currentTab == self.TAB.INBOX
-    local invoices = InvoiceManager:getInvoicesForFarm(myFarmId, inbox)
-
-    -- Create Invoice button (Outbox only, at bottom)
-    if not inbox then
-        local btnH = 0.042
-        local btnY = listBottomY
-        listBottomY = listBottomY + btnH + 0.008
-        listH       = listTopY - listBottomY
-
-        self:drawButton("btn_create_invoice",
-                        px + 0.015, btnY, pw - 0.030, btnH,
-                        "+ Create Invoice", 0.10, 0.38, 0.18, 0.013)
-    end
-
-    -- Draw invoice rows
-    if #invoices == 0 then
-        -- Empty state
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(false)
-        setTextColor(0.4, 0.45, 0.55, 0.8)
-        local emptyMsg = inbox and "No invoices in your inbox" or "No invoices sent yet"
-        renderText(px + pw/2, listBottomY + listH/2, 0.013, emptyMsg)
-    else
-        local rowH     = 0.072
-        local rowPad   = 0.006
-        local maxRows  = math.floor(listH / (rowH + rowPad))
-        local shown    = math.min(#invoices, maxRows)
-
-        for i = 1, shown do
-            local inv  = invoices[i]
-            local rowY = listTopY - (i * (rowH + rowPad))
-
-            if rowY < listBottomY then break end
-
-            self:drawInvoiceRow(inv, px + 0.010, rowY, pw - 0.020, rowH, i)
-        end
-
-        -- "X more" hint if list is longer than visible
-        if #invoices > maxRows then
-            setTextAlignment(RenderText.ALIGN_CENTER)
-            setTextBold(false)
-            setTextColor(0.4, 0.45, 0.55, 0.7)
-            renderText(px + pw/2, listBottomY - 0.001, 0.010,
-                       string.format("+ %d more invoices", #invoices - maxRows))
-        end
-    end
-end
-
--- Draw a single invoice row
-function RoleplayPhone:drawInvoiceRow(inv, x, y, w, h, index)
-    -- Row background (alternating slight shade)
-    local shade = (index % 2 == 0) and 0.115 or 0.095
-    self:drawRect(x, y, w, h, shade, shade+0.015, shade+0.030, 1.0)
-
-    -- Status badge (right side)
-    local badgeW = 0.075 * self.arScale
-    local badgeH = 0.022
-    local badgeX = x + w - badgeW - 0.008 * self.arScale
-    local badgeY = y + h - badgeH - 0.008
-    local sr, sg, sb = self:getStatusColor(inv.status)
-    self:drawRect(badgeX, badgeY, badgeW, badgeH, sr, sg, sb, 1.0)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(false)
-    setTextColor(1, 1, 1, 1)
-    renderText(badgeX + badgeW/2, badgeY + 0.004, 0.009, inv.status or "PENDING")
-
-    -- Invoice # and date
-    local indent = 0.010 * self.arScale
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(true)
-    setTextColor(0.75, 0.85, 1.0, 1.0)
-    renderText(x + indent, y + h - 0.020, 0.011, string.format("INV #%04d", inv.id or 0))
-
-    setTextBold(false)
-    setTextColor(0.5, 0.55, 0.65, 0.8)
-    renderText(x + indent, y + h - 0.034, 0.010,
-               string.format("Day %s", tostring(inv.createdDate or "?")))
-
-    -- Category
-    setTextColor(0.85, 0.85, 0.95, 0.9)
-    local cat = inv.category or "Uncategorized"
-    if #cat > 28 then cat = cat:sub(1,26) .. ".." end
-    renderText(x + indent, y + 0.030, 0.011, cat)
-
-    -- Amount (right side, larger)
-    setTextAlignment(RenderText.ALIGN_RIGHT)
-    setTextBold(true)
-    setTextColor(0.35, 0.95, 0.45, 1.0)
-    renderText(x + w - indent, y + 0.028, 0.015,
-               string.format("$%s", self:formatMoney(inv.amount or 0)))
-
-    -- Register hitbox
-    self:addHitbox("invoice_row", x, y, w, h, { invoice=inv })
-end
-
--- ─── INVOICE DETAIL screen ───────────────────────────────────────────────────
-function RoleplayPhone:drawInvoiceDetail()
-    if not self.selectedInvoice then
-        self.state = self.STATE.INVOICES_LIST
-        return
-    end
-
-    local s   = self.BIG
-    local px  = s.x
-    local py  = s.y
-    local pw  = s.w
-    local ph  = s.h
-    local inv = self.selectedInvoice
-
-    -- Header
-    local headerH = 0.05
-    local headerY = py + ph - 0.055 - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-    self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.18, 0.20, 0.28, 0.011)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, headerY + 0.016, 0.015,
-               string.format("INVOICE #%04d", inv.id or 0))
-
-    -- Status banner
-    local sr, sg, sb = self:getStatusColor(inv.status)
-    local bannerY = headerY - 0.038
-    self:drawRect(px, bannerY, pw, 0.038, sr, sg, sb, 0.85)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, bannerY + 0.010, 0.016, inv.status or "PENDING")
-
-    -- Detail fields
-    local fieldX = px + 0.020
-    local fieldW = pw - 0.040
-    local curY   = bannerY - 0.020
-
-    local function drawDetail(label, value)
-        curY = curY - 0.038
-        self:drawRect(fieldX, curY, fieldW, 0.036, 0.10, 0.13, 0.19, 1.0)
-        setTextAlignment(RenderText.ALIGN_LEFT)
-        setTextBold(false)
-        setTextColor(0.55, 0.65, 0.80, 0.85)
-        renderText(fieldX + 0.010, curY + 0.024, 0.009, label)
-        setTextColor(1, 1, 1, 1)
-        renderText(fieldX + 0.010, curY + 0.008, 0.013, tostring(value or "-"))
-    end
-
-    -- Get farm names - check farmManager first, then knownFarms for offline farms
-    local fromName = self:getFarmName(inv.fromFarmId)
-    local toName   = self:getFarmName(inv.toFarmId)
-
-    drawDetail("FROM",        fromName)
-    drawDetail("TO",          toName)
-    drawDetail("CATEGORY",    inv.category)
-    drawDetail("AMOUNT",      "$" .. self:formatMoney(inv.amount or 0))
-    drawDetail("DUE DATE",    inv.dueDate or "Not set")
-    drawDetail("CREATED",     "Day " .. tostring(inv.createdDate or "?"))
-
-    if inv.description and inv.description ~= "" then
-        drawDetail("DESCRIPTION", inv.description)
-    end
-    if inv.notes and inv.notes ~= "" then
-        drawDetail("NOTES", inv.notes)
-    end
-
-    -- Action buttons (bottom)
-    local btnY = py + 0.015
-    local myFarmId = self:getMyFarmId()
-
-    -- Pay button (shown to recipient if not already paid)
-    if inv.toFarmId == myFarmId and inv.status ~= "PAID" then
-        self:drawButton("btn_pay_invoice",
-                        px + 0.015, btnY, pw*0.44, 0.045,
-                        "Pay Invoice", 0.10, 0.40, 0.18, 0.013)
-    end
-
-    -- Mark Paid button (shown to sender)
-    if inv.fromFarmId == myFarmId and inv.status ~= "PAID" then
-        self:drawButton("btn_mark_paid",
-                        px + pw*0.54, btnY, pw*0.42, 0.045,
-                        "Mark as Paid", 0.28, 0.28, 0.10, 0.013)
-    end
-
-    -- Reject button (shown to recipient if still PENDING)
-    if inv.toFarmId == myFarmId and inv.status == "PENDING" then
-        self:drawButton("btn_reject_invoice",
-                        px + pw*0.54, btnY, pw*0.42, 0.045,
-                        "Reject", 0.42, 0.10, 0.10, 0.013)
-    end
-end
-
--- ─── CREATE INVOICE screen ───────────────────────────────────────────────────
-function RoleplayPhone:drawCreateInvoice()
-    local s   = self.BIG
-    local px  = s.x
-    local py  = s.y
-    local pw  = s.w
-    local ph  = s.h
-
-    -- Header
-    local headerH = 0.05
-    local headerY = py + ph - 0.055 - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-    self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.18, 0.20, 0.28, 0.011)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, headerY + 0.016, 0.015, "CREATE INVOICE")
-
-    local col1X = px + 0.015
-    local colW  = pw - 0.030
-    local curY  = headerY - 0.015
-    local fldH  = 0.050
-
-    -- ── To Farm selector ──
-    curY = curY - fldH - 0.008
-    local farms   = self:getAvailableFarms()
-    local farm    = farms[self.form.toFarmIndex] or farms[1]
-    local farmName = farm and farm.name or "Unknown"
-
-    self:drawRect(col1X, curY, colW, fldH, 0.10, 0.14, 0.20, 1.0)
-    self:drawRect(col1X, curY+fldH-0.002, colW, 0.002, 0.5, 0.6, 0.8, 0.4)
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(false)
-    setTextColor(0.55, 0.65, 0.80, 0.85)
-    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, "SEND TO")
-    setTextColor(1, 1, 1, 1)
-    renderText(col1X + 0.010, curY + 0.010, 0.013, farmName)
-
-    -- Arrow buttons
-    local arrowW = 0.030
-    self:drawButton("farm_prev", col1X + colW - arrowW*2 - 0.008, curY + 0.010,
-                    arrowW, 0.028, "<", 0.20, 0.22, 0.32, 0.012)
-    self:drawButton("farm_next", col1X + colW - arrowW - 0.004, curY + 0.010,
-                    arrowW, 0.028, ">", 0.20, 0.22, 0.32, 0.012)
-
-    -- ── Category selector ──
-    curY = curY - fldH - 0.008
-    local cats = InvoiceManager.categories
-    local cat  = cats[self.form.categoryIndex] or "Other"
-    local catDisplay = cat
-    if #catDisplay > 30 then catDisplay = catDisplay:sub(1,28) .. ".." end
-
-    self:drawRect(col1X, curY, colW, fldH, 0.10, 0.14, 0.20, 1.0)
-    self:drawRect(col1X, curY+fldH-0.002, colW, 0.002, 0.5, 0.6, 0.8, 0.4)
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(false)
-    setTextColor(0.55, 0.65, 0.80, 0.85)
-    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, "CATEGORY")
-    setTextColor(1, 1, 1, 1)
-    renderText(col1X + 0.010, curY + 0.010, 0.012, catDisplay)
-
-    self:drawButton("cat_prev", col1X + colW - arrowW*2 - 0.008, curY + 0.010,
-                    arrowW, 0.028, "<", 0.20, 0.22, 0.32, 0.012)
-    self:drawButton("cat_next", col1X + colW - arrowW - 0.004, curY + 0.010,
-                    arrowW, 0.028, ">", 0.20, 0.22, 0.32, 0.012)
-
-    -- ── Amount field ──
-    curY = curY - fldH - 0.008
-    self:drawField("field_amount", col1X, curY, colW, fldH,
-                   "AMOUNT ($)", self.form.amount,
-                   self.form.activeField == "amount")
-
-    -- ── Due Date field ──
-    curY = curY - fldH - 0.008
-    self:drawField("field_dueDate", col1X, curY, colW, fldH,
-                   "DUE DATE (e.g. Day 45)", self.form.dueDate,
-                   self.form.activeField == "dueDate")
-
-    -- ── Description field ──
-    curY = curY - fldH - 0.008
-    self:drawField("field_description", col1X, curY, colW, fldH,
-                   "DESCRIPTION", self.form.description,
-                   self.form.activeField == "description")
-
-    -- ── Notes field ──
-    curY = curY - fldH - 0.008
-    self:drawField("field_notes", col1X, curY, colW, fldH,
-                   "Notes (job details / agreement)", self.form.notes,
-                   self.form.activeField == "notes")
-
-    -- ── Send button ──
-    local sendY = py + 0.015
-    self:drawButton("btn_send_invoice",
-                    col1X, sendY, colW, 0.048,
-                    "SEND INVOICE", 0.10, 0.38, 0.18, 0.015)
-end
-
--- ─── Mouse event ──────────────────────────────────────────────────────────────
 function RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
     self.mouseX = posX
     self.mouseY = posY
@@ -1766,7 +1666,7 @@ function RoleplayPhone:onHitboxClicked(hb)
         local appId = hb.data.appId
         -- Weather and market apps coming soon
         if appId == "weather" then
-            -- TODO: self.state = self.STATE.WEATHER
+            self.state = self.STATE.WEATHER
             return
         end
         if appId == "market" then
@@ -2081,94 +1981,6 @@ function RoleplayPhone:onHitboxClicked(hb)
 end
 
 -- ─── Submit invoice form ──────────────────────────────────────────────────────
-function RoleplayPhone:submitInvoice()
-    local amount = tonumber(self.form.amount)
-    if not amount or amount <= 0 then
-        NotificationManager:push("rejected", "Enter a valid amount.")
-        return
-    end
-
-    local farms   = self:getAvailableFarms()
-    local toFarm  = farms[self.form.toFarmIndex]
-    local myFarmId = self:getMyFarmId()
-
-    if not toFarm then
-        NotificationManager:push("rejected", "No recipient farm selected.")
-        return
-    end
-
-    if toFarm.farmId == myFarmId then
-        NotificationManager:push("rejected", "Can't invoice your own farm.")
-        return
-    end
-
-    local cats = InvoiceManager.categories
-    local cat  = cats[self.form.categoryIndex] or "Other"
-    local day  = (g_currentMission and g_currentMission.environment and
-                  g_currentMission.environment.currentDay) or 0
-
-    if g_client ~= nil then
-        -- MP: send with id=0 — server assigns the canonical sequential ID and
-        -- broadcasts back to ALL clients (including the sender) so everyone
-        -- gets the invoice with the same real ID.  Do NOT add locally here;
-        -- the incoming broadcast from the server will add it.
-        local mpData = {
-            id          = 0,  -- placeholder; server will assign
-            fromFarmId  = myFarmId,
-            toFarmId    = toFarm.farmId,
-            category    = cat,
-            amount      = amount,
-            description = self.form.description,
-            notes       = self.form.notes,
-            dueDate     = self.form.dueDate,
-            status      = "PENDING",
-            createdDate = day,
-        }
-        g_client:getServerConnection():sendEvent(
-            InvoiceEvents.SendInvoiceEvent.new(Invoice.new(mpData)))
-        print("[RoleplayPhone] Invoice submitted to server (id=0, awaiting assignment)")
-    else
-        -- Singleplayer: assign ID locally, add directly, and save
-        local newId = InvoiceManager.nextInvoiceId
-        InvoiceManager.nextInvoiceId = InvoiceManager.nextInvoiceId + 1
-        local data = {
-            id          = newId,
-            fromFarmId  = myFarmId,
-            toFarmId    = toFarm.farmId,
-            category    = cat,
-            amount      = amount,
-            description = self.form.description,
-            notes       = self.form.notes,
-            dueDate     = self.form.dueDate,
-            status      = "PENDING",
-            createdDate = day,
-        }
-        local invoice = Invoice.new(data)
-        InvoiceManager:addInvoice(invoice)
-        RoleplayPhone:saveInvoices()
-        UsedPlusCompat:onInvoiceCreated(invoice)
-        print("[RoleplayPhone] Invoice created: #" .. tostring(newId))
-    end
-
-    NotificationManager:push("info",
-        string.format("Invoice for $%s sent to %s", self:formatMoney(amount), toFarm.name))
-
-    self:resetForm()
-    self.currentTab = self.TAB.OUTBOX
-    self.state = self.STATE.INVOICES_LIST
-end
-
-function RoleplayPhone:resetForm()
-    self.form.toFarmIndex   = 1
-    self.form.categoryIndex = 1
-    self.form.amount        = ""
-    self.form.description   = ""
-    self.form.notes         = ""
-    self.form.dueDate       = ""
-    self.form.activeField   = nil
-end
-
--- ─── Key event ────────────────────────────────────────────────────────────────
 function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
     if not isDown then return false end
 
@@ -2282,852 +2094,6 @@ function RoleplayPhone:formatMoney(n)
 end
 
 -- ─── CALL SCREEN (compact popup — no freeze, F8 to answer/hang up) ───────────
-function RoleplayPhone:drawCallScreen()
-    local call = self.call
-
-    -- Popup dimensions — left side, between minimap and keybinding list
-    local pw  = 0.165 * self.arScale
-    local ph  = 0.140
-    local px  = 0.01            -- left edge with small margin
-    local py  = 0.38            -- vertically between minimap (bottom) and keybindings (top)
-    local cx  = px + pw / 2
-
-    -- Background card
-    self:drawRect(px - 0.004, py - 0.004, pw + 0.008, ph + 0.008, 0.08, 0.12, 0.22, 0.85)
-    self:drawRect(px, py, pw, ph, 0.04, 0.07, 0.14, 0.97)
-    -- Top accent line
-    self:drawRect(px, py + ph - 0.003, pw, 0.003, 0.25, 0.50, 1.0, 0.9)
-
-    -- Status label
-    local statusStr = "Calling..."
-    if self.state == self.STATE.CALL_INCOMING then statusStr = "Incoming Call"
-    elseif self.state == self.STATE.CALL_ACTIVE then statusStr = "On Call" end
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(false)
-    setTextColor(0.55, 0.70, 1.0, 0.9)
-    renderText(cx, py + ph - 0.022, 0.012, statusStr)
-
-    -- Contact name
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(cx, py + ph * 0.62, 0.018, call.contactName or "Unknown")
-
-    -- Timer / ringing dots
-    setTextBold(false)
-    if self.state == self.STATE.CALL_ACTIVE and call.startTime and call.startTime > 0 then
-        local now     = (g_currentMission and g_currentMission.time) or call.startTime
-        local elapsed = math.max(0, math.floor((now - call.startTime) / 1000))
-        local mins    = math.floor(elapsed / 60)
-        local secs    = elapsed % 60
-        setTextColor(0.70, 0.95, 0.70, 1.0)
-        renderText(cx, py + ph * 0.44, 0.014, string.format("%d:%02d", mins, secs))
-    elseif self.state == self.STATE.CALL_OUTGOING then
-        local dots = string.rep(".", (math.floor(getTimeSec() * 2) % 4))
-        setTextColor(0.60, 0.70, 0.85, 0.8)
-        renderText(cx, py + ph * 0.44, 0.012, "Ringing" .. dots)
-    end
-
-    -- Decorative buttons (visual only — F8 does the actual action)
-    local btnW = 0.075 * self.arScale
-    local btnH = 0.032
-    local btnY = py + 0.018
-    if self.state == self.STATE.CALL_INCOMING then
-        local gap = 0.020
-        local bx1 = cx - btnW - gap / 2
-        local bx2 = cx + gap / 2
-        self:drawRect(bx1, btnY, btnW, btnH, 0.08, 0.45, 0.18, 0.85)
-        setTextBold(false)
-        setTextColor(1, 1, 1, 0.9)
-        renderText(bx1 + btnW/2, btnY + 0.008, 0.010, "Answer")
-        self:drawRect(bx2, btnY, btnW, btnH, 0.50, 0.10, 0.10, 0.85)
-        renderText(bx2 + btnW/2, btnY + 0.008, 0.010, "Decline")
-    else
-        self:drawRect(cx - btnW/2, btnY, btnW, btnH, 0.50, 0.10, 0.10, 0.85)
-        setTextBold(false)
-        setTextColor(1, 1, 1, 0.9)
-        renderText(cx, btnY + 0.008, 0.010, "End Call")
-    end
-
-    -- F8 hint
-    setTextBold(false)
-    setTextColor(0.50, 0.60, 0.75, 0.70)
-    renderText(cx, btnY - 0.014, 0.009, "Press F8 to answer / hang up")
-end
-
--- ─── CONTACTS LIST screen ─────────────────────────────────────────────────────
-function RoleplayPhone:drawContacts()
-    local s  = self.PHONE
-    local px = s.x
-    local py = s.y
-    local pw = s.w
-    local ph = s.h
-
-    -- Phone bezel (only if frame texture not available)
-    if not self.phoneFrame then
-        self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
-    end
-    self:drawRect(px, py, pw, ph, 0.06, 0.07, 0.10, 0.97)
-
-    local contentY = py + ph - 0.012
-
-    -- Header bar
-    local headerH = 0.042
-    local headerY = contentY - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-
-    -- Back button
-    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
-        "< Back", 0.18, 0.20, 0.28, 0.010)
-
-    -- Title
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Contacts")
-
-    -- Add button (top-right)
-    self:drawButton("btn_add_contact", px + pw - 0.068 * self.arScale, headerY + 0.008, 0.062 * self.arScale, 0.026,
-        "+ Add", 0.10, 0.38, 0.18, 0.012)
-
-    -- ── Contact list ──────────────────────────────────────────────────────────
-    local listY    = headerY - 0.008
-    local rowH     = 0.056
-    local rowGap   = 0.003
-    local contacts = ContactManager.contacts
-
-    if #contacts == 0 then
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(false)
-        setTextColor(0.50, 0.52, 0.60, 0.8)
-        renderText(px + pw / 2, py + ph / 2, 0.013,
-            "No contacts yet.  Tap  + Add  to save one.")
-        return
-    end
-
-    for i, c in ipairs(contacts) do
-        local rowY = listY - (i - 1) * (rowH + rowGap)
-        if rowY - rowH < py then break end   -- clip below screen
-
-        -- Alternating row shade
-        local shade = (i % 2 == 0) and 0.115 or 0.095
-        self:drawRect(px, rowY - rowH, pw, rowH, shade, shade + 0.015, shade + 0.030, 1.0)
-
-        -- Avatar square (first initial)
-        local avSize = 0.034
-        local avX    = px + 0.012
-        local avY    = rowY - rowH + (rowH - avSize) / 2
-        self:drawRect(avX, avY, avSize, avSize, 0.15, 0.32, 0.60, 1.0)
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(true)
-        setTextColor(1, 1, 1, 1)
-        renderText(avX + avSize / 2, avY + avSize * 0.20, 0.018,
-            string.upper(string.sub(c.name or "?", 1, 1)))
-
-        -- Name
-        local textX = avX + avSize + 0.012
-        setTextAlignment(RenderText.ALIGN_LEFT)
-        setTextBold(true)
-        setTextColor(0.90, 0.92, 1.0, 1.0)
-        renderText(textX, rowY - rowH + rowH * 0.52, 0.013, c.name or "Unknown")
-
-        -- Farm name (sub-line)
-        setTextBold(false)
-        setTextColor(0.52, 0.62, 0.78, 0.9)
-        renderText(textX, rowY - rowH + rowH * 0.18, 0.011,
-            (c.farmName ~= "" and c.farmName) or "No farm")
-
-        -- Phone (right side, green tint)
-        if c.phone and c.phone ~= "" then
-            setTextAlignment(RenderText.ALIGN_RIGHT)
-            setTextColor(0.38, 0.72, 0.38, 0.9)
-            renderText(px + pw - 0.014, rowY - rowH + rowH * 0.38, 0.011, c.phone)
-        end
-
-        -- Chevron hint
-        setTextAlignment(RenderText.ALIGN_RIGHT)
-        setTextColor(0.40, 0.42, 0.55, 0.6)
-        renderText(px + pw - 0.008, rowY - rowH + rowH * 0.38, 0.013, ">")
-
-        -- Unread message badge (green dot + count)
-        local unread = self.unreadMessages[i] or 0
-        if unread > 0 then
-            local dotR  = 0.012
-            local dotX  = px + pw - 0.038
-            local dotY  = rowY - rowH + (rowH / 2) - dotR
-            -- Green filled circle (drawn as small square for now)
-            self:drawRect(dotX, dotY, dotR * 2, dotR * 2, 0.15, 0.75, 0.30, 1.0)
-            -- Count number inside
-            setTextAlignment(RenderText.ALIGN_CENTER)
-            setTextBold(true)
-            setTextColor(1, 1, 1, 1)
-            local countStr = unread > 9 and "9+" or tostring(unread)
-            renderText(dotX + dotR, dotY + dotR * 0.25, 0.010, countStr)
-        end
-
-        -- Hitbox for the whole row
-        self:addHitbox("contact_row", px, rowY - rowH, pw, rowH, { index = i })
-    end
-end
-
-
--- ─── CONTACT DETAIL screen ────────────────────────────────────────────────────
--- ─── CONTACT DETAIL screen (small phone screen) ──────────────────────────────
-function RoleplayPhone:drawContactDetail()
-    if not self.selectedContact then
-        self.state = self.STATE.CONTACTS
-        return
-    end
-    local c = ContactManager:getContact(self.selectedContact)
-    if not c then
-        self.state = self.STATE.CONTACTS
-        return
-    end
-
-    local s  = self.PHONE
-    local px = s.x
-    local py = s.y
-    local pw = s.w
-    local ph = s.h
-
-    self:drawRect(px, py, pw, ph, 0.06, 0.07, 0.10, 0.97)
-
-    -- Header
-    local headerH = 0.042
-    local headerY = py + ph - 0.012 - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.08, 0.11, 0.18, 1.0)
-    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
-        "< Back", 0.12, 0.15, 0.22, 0.010)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Contact")
-
-    -- Avatar
-    local avSz = pw * 0.25
-    local avH  = avSz * self.actualAR
-    local avX  = px + pw/2 - avSz/2
-    local avY  = headerY - avH - 0.018
-    self:drawRect(avX, avY, avSz, avH, 0.15, 0.32, 0.60, 1.0)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(avX + avSz/2, avY + avH * 0.25, 0.028,
-        string.upper(string.sub(c.name or "?", 1, 1)))
-
-    -- Name
-    setTextBold(true)
-    setTextColor(0.92, 0.95, 1.0, 1.0)
-    renderText(px + pw/2, avY - 0.018, 0.014, c.name or "Unknown")
-
-    -- Info rows
-    local infoY = avY - 0.040
-    local infoX = px + 0.012
-    local rowH  = 0.030
-    local gap   = 0.006
-
-    local function infoRow(label, value)
-        if not value or value == "" then return end
-        setTextAlignment(RenderText.ALIGN_LEFT)
-        setTextBold(false)
-        setTextColor(0.50, 0.62, 0.78, 0.85)
-        renderText(infoX, infoY, 0.009, label)
-        setTextColor(0.92, 0.95, 1.0, 1.0)
-        renderText(infoX, infoY - 0.014, 0.011, value)
-        infoY = infoY - rowH - gap
-    end
-
-    infoRow("FARM", c.farmName)
-    infoRow("PHONE", c.phone)
-    infoRow("NOTES", c.notes)
-
-    -- Message and Delete buttons
-    local btnW = pw - 0.020
-    local btnH = 0.032
-    local btnX = px + 0.010
-
-    self:drawButton("btn_call",           btnX, py + 0.092, btnW, btnH,
-        "Call",           0.10, 0.48, 0.22, 0.011)
-    self:drawButton("btn_message_contact", btnX, py + 0.052, btnW, btnH,
-        "Message",        0.10, 0.35, 0.55, 0.011)
-    self:drawButton("btn_delete_contact",  btnX, py + 0.012, btnW, btnH,
-        "Delete Contact", 0.50, 0.10, 0.10, 0.010)
-end
-
--- ─── MESSAGE THREAD screen (big screen) ──────────────────────────────────────
-function RoleplayPhone:drawMessageThread()
-    if not self.selectedContact then
-        self.state = self.STATE.CONTACTS
-        return
-    end
-
-    local c = ContactManager:getContact(self.selectedContact)
-    if not c then
-        self.state = self.STATE.CONTACTS
-        return
-    end
-
-    local s  = self.BIG
-    local px = s.x
-    local py = s.y
-    local pw = s.w
-    local ph = s.h
-
-    self:drawBigScreen()
-
-    -- ── Header bar ────────────────────────────────────────────────────────────
-    local headerH = 0.062
-    local headerY = py + ph - 0.055 - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.07, 0.10, 0.16, 1.0)
-
-    self:drawButton("btn_back", px + 0.006, headerY + 0.016, 0.055 * self.arScale, 0.030,
-        "< Back", 0.15, 0.18, 0.26, 0.011)
-
-    -- Call button (top right of header)
-    self:drawButton("btn_call", px + pw - 0.080 * self.arScale, headerY + 0.016, 0.068 * self.arScale, 0.030,
-        "Call", 0.10, 0.48, 0.22, 0.011)
-
-    -- Avatar (small, in header)
-    local avSz = 0.036
-    local avX  = px + pw/2 - avSz/2
-    local avY  = headerY + (headerH - avSz) / 2
-    self:drawRect(avX, avY, avSz, avSz, 0.15, 0.32, 0.60, 1.0)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(avX + avSz/2, avY + avSz * 0.18, 0.018,
-        string.upper(string.sub(c.name or "?", 1, 1)))
-
-    -- Name + farm below avatar in header
-    setTextBold(true)
-    setTextColor(0.92, 0.95, 1.0, 1.0)
-    renderText(px + pw/2, headerY + 0.006, 0.013, c.name or "Unknown")
-    setTextBold(false)
-    setTextColor(0.50, 0.62, 0.78, 0.85)
-    renderText(px + pw/2, headerY - 0.006, 0.009,
-        (c.farmName ~= "" and c.farmName) or "")
-
-    -- ── Compose bar (bottom) ──────────────────────────────────────────────────
-    local composeH  = 0.052
-    local composeY  = py + 0.006
-    local sendBtnW  = 0.060 * self.arScale
-    local fieldX    = px + 0.010
-    local fieldW    = pw - sendBtnW - 0.022
-    local compose   = self.messageCompose
-
-    -- Compose background
-    self:drawRect(px, composeY, pw, composeH, 0.07, 0.09, 0.13, 1.0)
-    self:drawRect(px, composeY + composeH - 0.002, pw, 0.002, 0.15, 0.18, 0.26, 0.6)
-
-    -- Text input pill
-    local pillH = 0.032
-    local pillY = composeY + (composeH - pillH) / 2
-    local active = compose.active
-    local pillBg = active and 0.16 or 0.10
-    self:drawRect(fieldX, pillY, fieldW, pillH, pillBg, pillBg + 0.03, pillBg + 0.08, 1.0)
-    self:drawRect(fieldX, pillY + pillH - 0.002, fieldW, 0.002, 0.3, 0.4, 0.6,
-        active and 0.8 or 0.3)
-
-    local displayText = (compose.text == "" and not active) and "Message..." or compose.text
-    local displayCol  = (compose.text == "" and not active) and 0.40 or 1.0
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(false)
-    setTextColor(displayCol, displayCol, displayCol, 0.85)
-    renderText(fieldX + 0.008, pillY + pillH * 0.25, 0.012,
-        displayText .. (active and "|" or ""))
-    self:addHitbox("msg_field", fieldX, pillY, fieldW, pillH, {})
-
-    -- Send button
-    local canSend = compose.text ~= ""
-    local sbX = fieldX + fieldW + 0.006
-    local sbR = canSend and 0.10 or 0.15
-    local sbG = canSend and 0.42 or 0.18
-    local sbB = canSend and 0.22 or 0.20
-    self:drawButton("btn_send_message", sbX, pillY, sendBtnW - 0.004, pillH,
-        "Send", sbR, sbG, sbB, 0.010)
-
-    -- ── Message thread (between header and compose bar) ───────────────────────
-    local threadTop = headerY - 0.008
-    local threadBot = composeY + composeH + 0.006
-    local threadH   = threadTop - threadBot
-
-    -- Clip region visual (subtle inner border)
-    self:drawRect(px, threadBot, pw, 0.001, 0.12, 0.14, 0.20, 0.4)
-
-    local msgs = self.messages[self.selectedContact] or {}
-
-    if #msgs == 0 then
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(false)
-        setTextColor(0.35, 0.40, 0.50, 0.8)
-        renderText(px + pw/2, threadBot + threadH/2, 0.012,
-            "No messages yet.")
-        renderText(px + pw/2, threadBot + threadH/2 - 0.018, 0.010,
-            "Say something!")
-    else
-        -- Show most recent messages that fit, newest at bottom
-        -- Calculate how many we can fit
-        local bubblePad  = 0.008
-        local bubbleH    = 0.038   -- height per message row (wrapping is TODO)
-        local bubbleGap  = 0.006
-        local maxVisible = math.floor(threadH / (bubbleH + bubbleGap))
-        local startIdx   = math.max(1, #msgs - maxVisible + 1)
-
-        local curY = threadBot + bubblePad
-        for i = startIdx, #msgs do
-            local msg      = msgs[i]
-            local isSent   = msg.sent
-            local bubbleW  = pw * 0.68
-            local bx       = isSent and (px + pw - bubbleW - 0.012) or (px + 0.012)
-
-            -- Bubble background
-            local br = isSent and 0.10 or 0.14
-            local bg = isSent and 0.40 or 0.18
-            local bb = isSent and 0.20 or 0.42
-            self:drawRect(bx, curY, bubbleW, bubbleH, br, bg, bb, 1.0)
-
-            -- Message text
-            setTextAlignment(isSent and RenderText.ALIGN_RIGHT or RenderText.ALIGN_LEFT)
-            setTextBold(false)
-            setTextColor(1, 1, 1, 0.95)
-            local textX = isSent and (bx + bubbleW - 0.008) or (bx + 0.008)
-            renderText(textX, curY + bubbleH * 0.35, 0.011, msg.text or "")
-
-            -- Day label (small, muted)
-            setTextAlignment(isSent and RenderText.ALIGN_RIGHT or RenderText.ALIGN_LEFT)
-            setTextColor(0.55, 0.65, 0.75, 0.7)
-            renderText(textX, curY + bubbleH * 0.68, 0.008,
-                string.format("Day %d", msg.gameDay or 0))
-
-            curY = curY + bubbleH + bubbleGap
-        end
-    end
-end
-
-
--- ─── CONTACT CREATE screen ────────────────────────────────────────────────────
-function RoleplayPhone:drawContactCreate()
-    local s  = self.PHONE
-    local px = s.x
-    local py = s.y
-    local pw = s.w
-    local ph = s.h
-
-    self:drawRect(px, py, pw, ph, 0.06, 0.07, 0.10, 0.97)
-
-    local contentY = py + ph - 0.012
-
-    -- Header bar
-    local headerH = 0.042
-    local headerY = contentY - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
-
-    self:drawButton("btn_back", px + 0.006, headerY + 0.010, 0.055 * self.arScale, 0.030,
-        "< Back", 0.18, 0.20, 0.28, 0.011)
-
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.30, 0.016, "New Contact")
-
-    -- Fields (no X buttons — use Backspace to delete)
-    local f    = self.contactForm
-    local fX   = px + 0.012
-    local fW   = pw - 0.024
-    local fH   = 0.044
-    local fGap = 0.008
-    local fY   = headerY - 0.014
-
-    fY = fY - fH
-    self:drawField("cf_name",     fX, fY, fW, fH, "Name",         f.name,     f.activeField == "name")
-    fY = fY - fH - fGap
-    self:drawField("cf_farmName", fX, fY, fW, fH, "Farm Name",    f.farmName, f.activeField == "farmName")
-    fY = fY - fH - fGap
-    self:drawField("cf_phone",    fX, fY, fW, fH, "Phone (RP #)", f.phone,    f.activeField == "phone")
-    fY = fY - fH - fGap
-    self:drawField("cf_notes",    fX, fY, fW, fH, "Notes",        f.notes,    f.activeField == "notes")
-
-    -- Validation hint
-    if f.name == "" then
-        fY = fY - 0.020
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(false)
-        setTextColor(0.80, 0.55, 0.20, 0.85)
-        renderText(px + pw / 2, fY + 0.006, 0.010, "Name is required")
-    end
-
-    -- Save button
-    fY = fY - fH - 0.012
-    local canSave = f.name and f.name ~= ""
-    local btnR = canSave and 0.10 or 0.20
-    local btnG = canSave and 0.38 or 0.22
-    local btnB = canSave and 0.18 or 0.22
-    self:drawButton("btn_save_contact", fX, fY, fW, fH,
-        "Save Contact", btnR, btnG, btnB, 0.013)
-end
-
-
--- ─── resetContactForm helper ──────────────────────────────────────────────────
-function RoleplayPhone:resetContactForm()
-    self.contactForm = {
-        name        = "",
-        farmName    = "",
-        phone       = "",
-        notes       = "",
-        activeField = nil,
-    }
-end
-
-
--- ─── SETTINGS screen ──────────────────────────────────────────────────────────
-function RoleplayPhone:drawSettings()
-    local s  = self.BIG
-    local px = s.x
-    local py = s.y
-    local pw = s.w
-    local ph = s.h
-    local cx = px + pw / 2
-
-    self:drawBigScreen()
-
-    local contentY = py + ph - 0.055
-    local headerH  = 0.05
-    local headerY  = contentY - headerH
-
-    -- Semi-transparent dark tint over wallpaper so text is readable (wallpaper still visible)
-    self:drawRect(px, py, pw, ph, 0.0, 0.0, 0.0, 0.55)
-
-    -- Header
-    self:drawRect(px, headerY, pw, headerH, 0.12, 0.08, 0.20, 1.0)
-    local backW = 0.055 * self.arScale
-    self:drawButton("btn_back", px + 0.006, headerY + 0.010, backW, 0.030,
-        "< Back", 0.16, 0.10, 0.24, 0.011)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(cx, headerY + headerH * 0.30, 0.016, "Settings")
-
-    local cy     = headerY - 0.018
-    local rowH   = 0.040
-    local indent = px + 0.012
-    local usable = pw - 0.024               -- phone width minus left+right margin
-    local optGap = 0.006
-    local optW   = (usable - optGap) / 2    -- two buttons fill the row
-    local labelW = pw * 0.45
-
-    -- ── Section: Clock Format ─────────────────────────────────────────────────
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(false)
-    setTextColor(0.55, 0.45, 0.75, 0.85)
-    renderText(indent, cy, 0.009, "CLOCK FORMAT")
-    cy = cy - 0.028
-
-    local is12 = self.settings.timeFormat == "12"
-    self:drawButton("setting_timeformat_12",
-        indent, cy - rowH, optW, rowH,
-        "12 hr", is12 and 0.28 or 0.12, is12 and 0.18 or 0.10, is12 and 0.45 or 0.22, 0.012)
-    if is12 then
-        self:drawRect(indent, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0)
-    end
-    self:drawButton("setting_timeformat_24",
-        indent + optW + optGap, cy - rowH, optW, rowH,
-        "24 hr", not is12 and 0.28 or 0.12, not is12 and 0.18 or 0.10,
-        not is12 and 0.45 or 0.22, 0.012)
-    if not is12 then
-        self:drawRect(indent + optW + optGap, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0)
-    end
-    cy = cy - rowH - 0.022
-
-    -- ── Section: Temperature Unit ─────────────────────────────────────────────
-    setTextBold(false)
-    setTextColor(0.55, 0.45, 0.75, 0.85)
-    renderText(indent, cy, 0.009, "TEMPERATURE")
-    cy = cy - 0.028
-
-    local isF = self.settings.tempUnit == "F"
-    self:drawButton("setting_temp_F",
-        indent, cy - rowH, optW, rowH,
-        "°F", isF and 0.28 or 0.12, isF and 0.18 or 0.10, isF and 0.45 or 0.22, 0.013)
-    if isF then
-        self:drawRect(indent, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0)
-    end
-    self:drawButton("setting_temp_C",
-        indent + optW + optGap, cy - rowH, optW, rowH,
-        "°C", not isF and 0.28 or 0.12, not isF and 0.18 or 0.10,
-        not isF and 0.45 or 0.22, 0.013)
-    if not isF then
-        self:drawRect(indent + optW + optGap, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0)
-    end
-    cy = cy - rowH - 0.022
-
-    -- ── Section: Battery Widget ───────────────────────────────────────────────
-    setTextBold(false)
-    setTextColor(0.55, 0.45, 0.75, 0.85)
-    renderText(indent, cy, 0.009, "BATTERY WIDGET")
-    cy = cy - 0.028
-
-    local batOn = self.settings.batteryVisible
-    local batLbl = batOn and "ON" or "OFF"
-    local batR = batOn and 0.08 or 0.22
-    local batG = batOn and 0.42 or 0.14
-    local batB = batOn and 0.18 or 0.14
-    self:drawButton("setting_battery_toggle",
-        indent, cy - rowH, optW, rowH,
-        batLbl, batR, batG, batB, 0.013)
-    if batOn then
-        self:drawRect(indent, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0)
-    end
-    cy = cy - rowH - 0.022
-
-    -- ── Section: Wallpaper ────────────────────────────────────────────────────
-    setTextBold(false)
-    setTextColor(0.55, 0.45, 0.75, 0.85)
-    renderText(indent, cy, 0.009, "WALLPAPER")
-    cy = cy - 0.028
-
-    -- Calculate swatch size to fit all 7 within phone width
-    local numSwatches = #self.WALLPAPERS
-    local swatchGap = 0.006
-    local totalGaps = (numSwatches - 1) * swatchGap
-    local swatchSz  = (pw - (indent - px) * 2 - totalGaps) / numSwatches
-    local swatchX   = indent
-
-    for i, wp in ipairs(self.WALLPAPERS) do
-        local isSelected = (self.settings.wallpaperIndex == i)
-        -- Swatch square
-        self:drawRect(swatchX, cy - swatchSz, swatchSz, swatchSz, wp.r, wp.g, wp.b, 1.0)
-        -- Selection ring
-        if isSelected then
-            self:drawRect(swatchX - 0.003, cy - swatchSz - 0.003,
-                swatchSz + 0.006, swatchSz + 0.006,
-                0.80, 0.60, 1.0, 0.0)
-            self:drawRect(swatchX - 0.003, cy - swatchSz - 0.003,
-                swatchSz + 0.006, 0.002, 0.80, 0.60, 1.0, 1.0)
-            self:drawRect(swatchX - 0.003, cy - 0.003,
-                swatchSz + 0.006, 0.002, 0.80, 0.60, 1.0, 1.0)
-            self:drawRect(swatchX - 0.003, cy - swatchSz - 0.003,
-                0.002, swatchSz + 0.006, 0.80, 0.60, 1.0, 1.0)
-            self:drawRect(swatchX + swatchSz + 0.001, cy - swatchSz - 0.003,
-                0.002, swatchSz + 0.006, 0.80, 0.60, 1.0, 1.0)
-        end
-        -- Name label
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(isSelected)
-        setTextColor(isSelected and 0.90 or 0.55,
-                     isSelected and 0.80 or 0.50,
-                     isSelected and 1.00 or 0.70, 1.0)
-        renderText(swatchX + swatchSz / 2, cy - swatchSz - 0.014, 0.009, wp.name)
-
-        self:addHitbox("setting_wallp_" .. i,
-            swatchX - 0.004, cy - swatchSz - 0.018, swatchSz + 0.008, swatchSz + 0.022, {})
-
-        swatchX = swatchX + swatchSz + swatchGap
-    end
-end
-
--- ─── Settings save / load (modSettings XML, per-player, cosmetic) ─────────────
-function RoleplayPhone:saveSettings()
-    local xmlPath = getUserProfileAppPath()
-        .. "modSettings/FS25_RoleplayInvoices_settings.xml"
-    local xmlFile = createXMLFile("RP_Settings", xmlPath, "phoneSettings")
-    if not xmlFile or xmlFile == 0 then return end
-
-    setXMLString(xmlFile, "phoneSettings#timeFormat",    self.settings.timeFormat    or "12")
-    setXMLString(xmlFile, "phoneSettings#tempUnit",      self.settings.tempUnit      or "F")
-    setXMLInt(xmlFile,    "phoneSettings#wallpaperIndex",self.settings.wallpaperIndex or 1)
-    setXMLBool(xmlFile,   "phoneSettings#batteryVisible",self.settings.batteryVisible)
-
-    saveXMLFile(xmlFile)
-    delete(xmlFile)
-    print("[RoleplayPhone] Settings saved")
-end
-
-function RoleplayPhone:loadSettings()
-    local xmlPath = getUserProfileAppPath()
-        .. "modSettings/FS25_RoleplayInvoices_settings.xml"
-    local xmlFile = loadXMLFile("RP_Settings", xmlPath)
-    if not xmlFile or xmlFile == 0 then
-        print("[RoleplayPhone] No settings file found, using defaults")
-        return
-    end
-
-    local tf = getXMLString(xmlFile, "phoneSettings#timeFormat")
-    if tf == "12" or tf == "24" then self.settings.timeFormat = tf end
-
-    local tu = getXMLString(xmlFile, "phoneSettings#tempUnit")
-    if tu == "F" or tu == "C" then self.settings.tempUnit = tu end
-
-    local wi = getXMLInt(xmlFile, "phoneSettings#wallpaperIndex")
-    if wi and wi >= 1 and wi <= #self.WALLPAPERS then
-        self.settings.wallpaperIndex = wi
-    end
-
-    local bv = getXMLBool(xmlFile, "phoneSettings#batteryVisible")
-    if bv ~= nil then self.settings.batteryVisible = bv end
-
-    delete(xmlFile)
-    print(string.format("[RoleplayPhone] Settings loaded: %s, %s, wallpaper=%d, battery=%s",
-        self.settings.timeFormat, self.settings.tempUnit,
-        self.settings.wallpaperIndex, tostring(self.settings.batteryVisible)))
-end
-
--- ─── RECENT CALLS screen (small phone screen) ────────────────────────────────
-function RoleplayPhone:drawCallsList()
-    local s  = self.PHONE
-    local px = s.x
-    local py = s.y
-    local pw = s.w
-    local ph = s.h
-
-    -- Phone bezel (only if frame texture not available)
-    if not self.phoneFrame then
-        self:drawRect(px-0.009, py-0.009, pw+0.018, ph+0.018, 0.01, 0.01, 0.01, 1.0)
-    end
-    self:drawRect(px, py, pw, ph, 0.06, 0.07, 0.10, 0.97)
-
-    -- Header
-    local headerH = 0.042
-    local headerY = py + ph - 0.012 - headerH
-    self:drawRect(px, headerY, pw, headerH, 0.08, 0.11, 0.18, 1.0)
-    self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
-        "< Back", 0.12, 0.15, 0.22, 0.010)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Recent Calls")
-
-    -- List
-    local history = self.callHistory
-    if #history == 0 then
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(false)
-        setTextColor(0.45, 0.50, 0.60, 0.8)
-        renderText(px + pw / 2, py + ph / 2, 0.011, "No recent calls.")
-        return
-    end
-
-    local rowH   = 0.048
-    local rowGap = 0.003
-    local listY  = headerY - 0.008
-
-    for i, entry in ipairs(history) do
-        local rowY = listY - (i - 1) * (rowH + rowGap)
-        if rowY - rowH < py then break end
-
-        local shade = (i % 2 == 0) and 0.10 or 0.085
-        self:drawRect(px, rowY - rowH, pw, rowH, shade, shade + 0.01, shade + 0.025, 1.0)
-
-        -- Direction icon color and symbol
-        local dirColor = {1, 1, 1}
-        local dirSymbol = "→"
-        if entry.direction == "incoming" then
-            dirColor = {0.20, 0.80, 0.40}
-            dirSymbol = "↙"
-        elseif entry.direction == "missed" then
-            dirColor = {0.90, 0.25, 0.25}
-            dirSymbol = "↙"
-        elseif entry.direction == "outgoing" then
-            dirColor = {0.40, 0.65, 1.0}
-            dirSymbol = "↗"
-        end
-
-        -- Direction arrow
-        setTextAlignment(RenderText.ALIGN_LEFT)
-        setTextBold(true)
-        setTextColor(dirColor[1], dirColor[2], dirColor[3], 1.0)
-        renderText(px + 0.008, rowY - rowH + rowH * 0.28, 0.014, dirSymbol)
-
-        -- Contact name
-        setTextBold(true)
-        setTextColor(0.92, 0.95, 1.0, 1.0)
-        renderText(px + 0.026, rowY - rowH + rowH * 0.28, 0.012, entry.name or "Unknown")
-
-        -- Direction label
-        setTextBold(false)
-        setTextColor(dirColor[1], dirColor[2], dirColor[3], 0.75)
-        local label = entry.direction == "missed" and "Missed" 
-            or entry.direction == "incoming" and "Incoming"
-            or "Outgoing"
-        renderText(px + 0.026, rowY - rowH + rowH * 0.62, 0.009, label)
-    end
-end
-
-
--- ─── Mission00 hooks ─────────────────────────────────────────────────────────
-Mission00.update = Utils.appendedFunction(Mission00.update, function(mission, dt)
-    RoleplayPhone:updateBattery(dt / 1000)
-    RoleplayPhone:updateCallTimeout(dt)
-    RoleplayPhone:updateCallKeyPoll()
-end)
-
-Mission00.draw = Utils.appendedFunction(Mission00.draw, function(mission)
-    if not RoleplayPhone.inputRegistered then return end
-    RoleplayPhone:draw()
-end)
-
-
-Mission00.mouseEvent = Utils.appendedFunction(Mission00.mouseEvent,
-    function(mission, posX, posY, isDown, isUp, button)
-        RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
-    end)
-
-local _phoneKeyListener = {}
-function _phoneKeyListener:keyEvent(unicode, sym, modifier, isDown)
-    RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
-end
-
--- FS25 calls these on every registered mod event listener during game save/load.
--- Without them the engine fails the entire save with Error 7.
-function _phoneKeyListener:saveToXMLFile(xmlFilename, key, usedModNames)
-    RoleplayPhone:saveInvoices()
-end
-
-function _phoneKeyListener:loadFromXMLFile(xmlFilename, key)
-    -- Loading is handled in Mission00.loadMap hook via RoleplayPhone:loadSavedData()
-end
-
-addModEventListener(_phoneKeyListener)
-
-Mission00.loadMap = Utils.appendedFunction(Mission00.loadMap, function(mission, name)
-    RoleplayPhone:init()
-    RoleplayPhone:loadSavedData()
-end)
-
--- Register the phone keybinding after gameplay fully starts.
--- The correct hook is MessageType.CURRENT_MISSION_LOADED via g_messageCenter --
--- that is the exact same event the built-in Player class uses to register its
--- own input actions (see Player:initialise). It fires AFTER "Entered Gameplay"
--- on both host and MP clients, so registration always lands at the right time.
-RoleplayPhone.inputRegistered = false
-
-g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
-    if RoleplayPhone.inputRegistered then return end
-    print("[RoleplayPhone] CURRENT_MISSION_LOADED fired, registering keybind")
-    RoleplayPhone:registerKeybind()
-
-    -- Login notification: fires after "Entered Gameplay" so farmId is reliable
-    local myFarmId = RoleplayPhone:getMyFarmId()
-    local unpaid = 0
-    for _, inv in pairs(InvoiceManager.invoices) do
-        if inv.toFarmId == myFarmId and inv.status == "PENDING" then
-            unpaid = unpaid + 1
-        end
-    end
-    if unpaid > 0 then
-        local msg = unpaid == 1
-            and "You have 1 unpaid invoice."
-            or  string.format("You have %d unpaid invoices.", unpaid)
-        NotificationManager:push("info", msg)
-    end
-
-    -- Client-pull contact sync: ask host for our saved contacts
-    -- Host replies with RI_ContactSyncEvent containing this farm's contacts
-    if g_server == nil and myFarmId and myFarmId > 0 then
-        g_client:getServerConnection():sendEvent(
-            RI_ContactEvent.new("request", myFarmId, 0, {}))
-        print(string.format("[RoleplayPhone] Requested contact sync for farm %d", myFarmId))
-    end
-end, RoleplayPhone)
-
 function RoleplayPhone:registerKeybind()
     if self.inputRegistered then return end
 
@@ -3293,6 +2259,13 @@ Mission00.onConnectionFinishedLoading = Utils.appendedFunction(
         if count > 0 then
             print(string.format("[RoleplayPhone] Sent %d existing invoices to new client", count))
         end
+        -- Send weather forecast so client weather app shows real data
+        local forecast = RoleplayPhone:getForecastFromXML()
+        if forecast and next(forecast) ~= nil then
+            connection:sendEvent(RI_WeatherForecastEvent.new(forecast))
+            print("[RoleplayPhone] Sent weather forecast to new client")
+        end
+
         -- Contacts use client-pull: client sends RI_ContactEvent("request") after
         -- CURRENT_MISSION_LOADED so we know their farmId. No push needed here.
     end

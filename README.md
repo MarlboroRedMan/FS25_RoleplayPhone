@@ -21,7 +21,28 @@ A Farming Simulator 25 mod that adds a full-featured roleplay smartphone UI for 
 - ⚙️ **Settings** — Wallpaper, time format (12/24hr), temperature units (°F/°C), battery display
 - 💾 **Persistent Storage** — Invoices and contacts save with your game
 - 🌐 **Multiplayer Ready** — Full server/client sync via network events
-- 🌤️ **Weather & Market apps** — Visible on page 2 of the home screen but not yet functional — coming in v0.3.0
+- 🌤️ **Weather App** — Full current conditions and multi-day forecast (see below)
+
+---
+
+## Weather App
+
+The Weather app shows real in-game weather data pulled directly from FS25's internal systems — the same source the base game's own weather panel uses.
+
+**Current conditions:**
+- Temperature (°F or °C based on your settings)
+- Condition (Clear, Rain, Snow, Thunderstorm, etc.)
+- Wind speed and compass direction
+- Cloud cover percentage
+
+**Forecast:**
+- Up to 5 days ahead with real conditions and temperature ranges
+- Day labels automatically match your time settings:
+  - **1 day/period:** Shows month names (Sep, Oct, Nov...) — matches the base game
+  - **7 days/period:** Shows day numbers (Day 7, Day 8...)
+- Temperatures show high/low ranges pulled from the map's weather variation data
+
+> **Note on forecast temperatures:** Just like real-world weather apps (AccuWeather, Weather.com, etc.), forecast temperatures across different sources will vary slightly. Each app uses its own model. Our phone reads the exact per-variation temperature ranges defined in the map's weather configuration — these are the same values the game engine schedules. Minor differences from the base game's display are expected and normal, just as they are in real life.
 
 ---
 
@@ -72,7 +93,7 @@ Both bindings are fully remappable in the FS25 key bindings menu under **Control
 ## How to Use
 
 ### Opening the Phone
-Press **F7** to toggle the phone open and closed while on foot. The phone cannot be opened while in a vehicle — but if a call comes in while driving, press **F8** to answer or hang up without needing to open the phone.
+Press **F7** to toggle the phone open and closed. The phone cannot be opened while in a vehicle — but if a call comes in while driving, press **F8** to answer or hang up without needing to open the phone.
 
 ### Sending an Invoice
 1. Open the phone and tap **Invoices**
@@ -97,30 +118,40 @@ Press **F7** to toggle the phone open and closed while on foot. The phone cannot
 3. Type your message and tap **Send**
 
 ### A Note on Phone Numbers
-The phone number field is cosmetic RP flavor only — it doesn't route calls or do anything functional. Players can enter any format they like, up to 60 characters. All of these work fine:
-- `555-0101`
-- `(555)555-1000`
-- `6546494564`
-- Any custom format your server agrees on
+The phone number field is cosmetic RP flavor only — it doesn't route calls or do anything functional. Players can enter any format they like, up to 60 characters.
 
 ---
 
 ## Multiplayer Notes
 
 - The **host** handles all invoice saving and loading
-- Clients receive invoice and contact updates in real time via network sync
-- Clients do not need direct access to the savegame directory
+- Clients receive invoice, contact, and weather forecast updates in real time via network sync
 - All invoice actions (pay, reject, mark paid) broadcast to all connected players
 - Incoming calls do not freeze either player — the call popup is non-blocking
-- **New save recommended** — starting a fresh save avoids any leftover data from older versions of the mod
-- **Contacts are per-farm** — each player manages their own contact list, contacts do not sync between players
-- **The zip filename matters** — the file must stay named `FS25_RoleplayPhone.zip`, do not rename it
+- **The phone is farm-based** — all players on the same farm share the same inbox, contacts, and message threads. This matches how FS25 works internally — the farm is the identity, not the individual player.
+- **Messages are session-only** — message history is not saved between sessions
+- **Contact farm name must match the actual farm name** in game for calls and messages to route correctly
+- **The zip filename matters** — the file must stay named `FS25_RoleplayPhone.zip`
+
+---
+
+## Permissions
+
+The phone uses FS25's native farm manager permission system — no configuration required.
+
+| Action | Farm Hand | Farm Manager | Server Admin |
+|--------|-----------|--------------|--------------|
+| View invoices / weather / contacts | ✅ | ✅ | ✅ |
+| Create / pay / reject invoices | ❌ | ✅ | ✅ |
+| Send messages and make calls | ✅ | ✅ | ✅ |
+
+Permissions are farm-specific — if a player leaves a farm their manager rights don't follow them, exactly like the base game.
 
 ---
 
 ## Current Version
 
-**v0.2.2** — Ultrawide display support, phone frame overlay, aspect ratio scaling for all screen resolutions
+**v0.3.0** — Weather app with real forecast data, farm manager permissions, file structure refactor, multiplayer tested
 
 ---
 
@@ -129,11 +160,9 @@ The phone number field is cosmetic RP flavor only — it doesn't route calls or 
 This mod was developed collaboratively between a human creator and Claude (Anthropic AI). The vision, direction, design decisions, and testing were all driven by MarlboroRedMan — Claude handled the code implementation based on those ideas.
 
 ### Codebase Statistics
-- **2,800+ lines of code** across 7 Lua scripts
-- **22 total mod files** (7 Lua • 2 XML • 11 textures • 1 sound • 1 localization)
+- **~3,500 lines of code** across 12 Lua scripts
+- **6 app modules** — Weather, Invoices, Contacts, Calls, Settings, and core phone logic
 - **5 core systems** — Invoice, Contact, Save, Network Events, and Notifications
-- **1 network event module** for full multiplayer sync
-- **1 persistent save/load system** integrated with FS25's save cycle
 - Developed February–March 2026
 
 ---
