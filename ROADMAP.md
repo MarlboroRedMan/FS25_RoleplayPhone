@@ -87,7 +87,6 @@
 ## 🔮 v0.3.x — Planned Polish
 - Market app (combined: crop prices + used vehicle marketplace + property management)
 - Additional wallpaper options
-- Weather widget icon on home screen page 1
 
 ---
 
