@@ -6,8 +6,8 @@ A Farming Simulator 25 mod that adds a full-featured roleplay smartphone UI for 
 
 ## Features
 
-- 📱 **Phone UI** — Press F7 to open/close a modern smartphone interface with wallpaper, clock, and weather
-- 🕐 **Live clock & date** — Displays current in-game time, day, and season on the home screen
+- 📱 **Phone UI** — Press F7 to open/close a modern smartphone interface with wallpaper and live weather widget
+- 🌤️ **Home Screen Weather Widget** — Condition icon, temperature, and map name displayed front and center on the home screen
 - 📄 **Invoice System** — Create and manage invoices between farms for rent, leases, vehicle sales, services, and more
 - 📥 **Inbox / Outbox** — Separate views for received and sent invoices
 - 💰 **Payment System** — Recipients can pay invoices directly (deducts from farm account), or senders can manually mark as paid
@@ -18,7 +18,8 @@ A Farming Simulator 25 mod that adds a full-featured roleplay smartphone UI for 
 - 📞 **Calling** — Call contacts directly from the phone; F8 answers or hangs up (works while driving)
 - 🔔 **Notifications** — Color-coded on-screen notifications for invoices, messages, calls, and pings
 - 📋 **Recent Calls** — View call history for the current session (resets each time you load the game)
-- ⚙️ **Settings** — Wallpaper, time format (12/24hr), temperature units (°F/°C), battery display
+- ⚙️ **Settings** — Tabbed settings with wallpaper picker, time format (12/24hr), temperature units (°F/°C), battery display
+- 🖼️ **Wallpapers** — 5 photo wallpapers (Countryside, Barn & Silos, Big Red Barn, Winter Red Barn, Hay Bales) plus color options
 - 💾 **Persistent Storage** — Invoices and contacts save with your game
 - 🌐 **Multiplayer Ready** — Full server/client sync via network events
 - 🌤️ **Weather App** — Full current conditions and multi-day forecast (see below)
@@ -151,7 +152,7 @@ Permissions are farm-specific — if a player leaves a farm their manager rights
 
 ## Current Version
 
-**v0.3.0** — Weather app with real forecast data, farm manager permissions, file structure refactor, multiplayer tested
+**v0.3.1** — New wallpapers, tabbed settings with wallpaper picker, redesigned home screen weather widget with condition icons, F8 keybind fix
 
 ---
 

@@ -36,7 +36,9 @@ RoleplayPhone.TAB = {
 RoleplayPhone.state          = RoleplayPhone.STATE.CLOSED
 RoleplayPhone.isOpen         = false   -- true while phone UI is visible (context pushed)
 RoleplayPhone.phoneContextEventId = nil  -- eventId of close action registered in RI_PHONE_UI context
-RoleplayPhone.currentTab     = RoleplayPhone.TAB.INBOX
+RoleplayPhone.currentTab          = RoleplayPhone.TAB.INBOX
+RoleplayPhone.settingsTab         = "general"   -- "general" | "wallpaper"
+RoleplayPhone.previewWallpaper    = nil          -- index being previewed, nil = use current
 RoleplayPhone.mouseX         = 0
 RoleplayPhone.mouseY         = 0
 RoleplayPhone.whiteOverlay   = nil
@@ -100,13 +102,18 @@ RoleplayPhone.battery = {
 -- Index 1 = Countryside (uses wallpaper.dds texture if present)
 -- Index 2+ = solid colour swatches
 RoleplayPhone.WALLPAPERS = {
-    { name="Countryside", texture=true,  r=0.08, g=0.12, b=0.06 },  -- 1 fallback tint if no .dds
-    { name="Midnight",    texture=false, r=0.07, g=0.07, b=0.14 },  -- 2
-    { name="Forest",      texture=false, r=0.04, g=0.14, b=0.07 },  -- 3
-    { name="Slate",       texture=false, r=0.10, g=0.10, b=0.10 },  -- 4
-    { name="Ember",       texture=false, r=0.16, g=0.07, b=0.04 },  -- 5
-    { name="Dusk",        texture=false, r=0.14, g=0.05, b=0.18 },  -- 6
-    { name="Ocean",       texture=false, r=0.04, g=0.12, b=0.20 },  -- 7
+    { name="Countryside",   texture="wallpaper",              r=0.08, g=0.12, b=0.06 },
+    { name="Barn & Silos",  texture="wallpaperBarnSilos",     r=0.08, g=0.10, b=0.14 },
+    { name="Red Barn",      texture="wallpaperBigRedBarn",    r=0.14, g=0.06, b=0.06 },
+    { name="Winter Barn",   texture="wallpaperWinterRedBarn", r=0.10, g=0.12, b=0.16 },
+    { name="Hay Bales",     texture="wallpaperHayBales",      r=0.06, g=0.14, b=0.06 },
+    { name="Midnight",      texture=false, r=0.07, g=0.07, b=0.14 },
+    { name="Forest",        texture=false, r=0.04, g=0.14, b=0.07 },
+    { name="Slate",         texture=false, r=0.10, g=0.10, b=0.10 },
+    { name="Ember",         texture=false, r=0.16, g=0.07, b=0.04 },
+    { name="Dusk",          texture=false, r=0.14, g=0.05, b=0.18 },
+    { name="Ocean",         texture=false, r=0.04, g=0.12, b=0.20 },
+    { name="Rose Gold",     texture=false, r=0.20, g=0.10, b=0.12 },
 }
 
 -- Create invoice form state
@@ -177,12 +184,26 @@ RoleplayPhone.FRAME_SCREEN = {
 function RoleplayPhone:init()
     local tex = modDirectory .. "textures/"
     self.whiteOverlay = createImageOverlay(tex .. "white.dds")
-    self.wallpaper    = createImageOverlay(tex .. "wallpaper.dds")
+    self.wallpaper               = createImageOverlay(tex .. "wallpaper.dds")
+    self.wallpaperBarnSilos      = createImageOverlay(tex .. "wallpaper_barnsilos.dds")
+    self.wallpaperBigRedBarn     = createImageOverlay(tex .. "wallpaper_bigredbarn.dds")
+    self.wallpaperWinterRedBarn  = createImageOverlay(tex .. "wallpaper_winterredbarn.dds")
+    self.wallpaperHayBales       = createImageOverlay(tex .. "wallpaper_haybales.dds")
     self.iconInvoices = createImageOverlay(tex .. "icon_invoices.dds")
     self.iconContacts = createImageOverlay(tex .. "icon_contacts.dds")
     self.iconCalls    = createImageOverlay(tex .. "recent_call.dds")
     self.iconSettings = createImageOverlay(tex .. "icon_settings.dds")
     self.iconWeather  = createImageOverlay(tex .. "weather.dds")
+    self.weatherIcons = {
+        Clear        = createImageOverlay(tex .. "weather_clear.dds"),
+        PartlyCloudy = createImageOverlay(tex .. "weather_partlycloudy.dds"),
+        Cloudy       = createImageOverlay(tex .. "weather_cloudy.dds"),
+        Rain         = createImageOverlay(tex .. "weather_rain.dds"),
+        HeavyRain    = createImageOverlay(tex .. "weather_heavyrain.dds"),
+        Snow         = createImageOverlay(tex .. "weather_snow.dds"),
+        Storm        = createImageOverlay(tex .. "weather_storm.dds"),
+        Hail         = createImageOverlay(tex .. "weather_hail.dds"),
+    }
     self.iconMarket   = nil  -- no icon yet
     self.phoneFrame   = createImageOverlay(tex .. "phone_frame.dds")
     if self.phoneFrame == nil or self.phoneFrame == 0 then
@@ -1175,9 +1196,10 @@ function RoleplayPhone:drawBigScreen()
     local bx, by = s.x - pad * self.arScale, s.y - pad
     local bw, bh = s.w + pad * self.arScale * 2, s.h + pad * 2
     local wp = self.WALLPAPERS[self.settings.wallpaperIndex] or self.WALLPAPERS[1]
-    if wp.texture and self.wallpaper and self.wallpaper ~= 0 then
-        setOverlayColor(self.wallpaper, 1, 1, 1, 1)
-        renderOverlay(self.wallpaper, bx, by, bw, bh)
+    local wpOverlay = wp.texture and self[wp.texture] or nil
+    if wpOverlay and wpOverlay ~= 0 then
+        setOverlayColor(wpOverlay, 1, 1, 1, 1)
+        renderOverlay(wpOverlay, bx, by, bw, bh)
         self:drawRect(bx, by, bw, bh, 0.0, 0.0, 0.0, 0.45)
     else
         self:drawRect(bx, by, bw, bh, wp.r, wp.g, wp.b, 1.0)
@@ -1274,21 +1296,21 @@ function RoleplayPhone:drawPhoneHome()
 
     -- ── Screen background ────────────────────────────────────────────────────
     if self.homePage == 1 then
-        -- Page 1: wallpaper from picker — texture (Countryside) or colour swatch
         local wp = self.WALLPAPERS[self.settings.wallpaperIndex] or self.WALLPAPERS[1]
-        if wp.texture and self.wallpaper and self.wallpaper ~= 0 then
-            setOverlayColor(self.wallpaper, 1, 1, 1, 1)
-            renderOverlay(self.wallpaper, px, py, pw, ph)
+        local wpOverlay = wp.texture and self[wp.texture] or nil
+        if wpOverlay and wpOverlay ~= 0 then
+            setOverlayColor(wpOverlay, 1, 1, 1, 1)
+            renderOverlay(wpOverlay, px, py, pw, ph)
             self:drawRect(px, py, pw, ph, 0.0, 0.0, 0.0, 0.38)
         else
             self:drawRect(px, py, pw, ph, wp.r, wp.g, wp.b, 1.0)
         end
     else
-        -- Page 2+: same wallpaper as page 1
         local wp = self.WALLPAPERS[self.settings.wallpaperIndex] or self.WALLPAPERS[1]
-        if wp.texture and self.wallpaper and self.wallpaper ~= 0 then
-            setOverlayColor(self.wallpaper, 1, 1, 1, 1)
-            renderOverlay(self.wallpaper, px, py, pw, ph)
+        local wpOverlay = wp.texture and self[wp.texture] or nil
+        if wpOverlay and wpOverlay ~= 0 then
+            setOverlayColor(wpOverlay, 1, 1, 1, 1)
+            renderOverlay(wpOverlay, px, py, pw, ph)
             self:drawRect(px, py, pw, ph, 0.0, 0.0, 0.0, 0.55)
         else
             self:drawRect(px, py, pw, ph, wp.r, wp.g, wp.b, 1.0)
@@ -1304,38 +1326,9 @@ function RoleplayPhone:drawPhoneHome()
     -- Status bar (always)
     self:drawStatusBar(px, py, pw, ph)
 
-    -- ── Page 1 content: clock + weather widget ───────────────────────────────
+    -- ── Page 1 content: weather widget ──────────────────────────────────────
     if self.homePage == 1 then
-        -- Big clock
-        local timeStr = "00:00"
-        if g_currentMission and g_currentMission.environment then
-            local dt   = g_currentMission.environment.dayTime / 3600000
-            local hrs  = math.floor(dt) % 24
-            local mins = math.floor((dt - math.floor(dt)) * 60)
-            timeStr    = self:formatTime(hrs, mins)
-        end
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(true)
-        setTextColor(1, 1, 1, 1)
-        renderText(cx, py + ph * 0.70, 0.038, timeStr)
-
-        -- Day and Season
-        local dateStr = ""
-        if g_currentMission and g_currentMission.environment then
-            local env     = g_currentMission.environment
-            local day     = env.currentDay or 0
-            local seasons = { "Spring", "Summer", "Autumn", "Winter" }
-            local season  = "Spring"
-            if env.currentSeason ~= nil then
-                season = seasons[(env.currentSeason % 4) + 1] or "Spring"
-            end
-            dateStr = string.format("Day %d  -  %s", day, season)
-        end
-        setTextBold(false)
-        setTextColor(0.90, 0.93, 1.0, 0.92)
-        renderText(cx, py + ph * 0.63, 0.013, dateStr)
-
-        -- Weather widget
+        -- Weather widget (fills the center area)
         self:drawWeatherWidget(px, py, pw, ph)
 
     -- ── Page 2+ content: app grid ────────────────────────────────────────────
@@ -1430,21 +1423,18 @@ end
 function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
     local cx = px + pw / 2
 
-    -- Widget sits between date and dock, roughly in the center vertical area
-    local widgetY = py + ph * 0.43
-
     -- Get weather data
-    local tempStr    = "--°C"
+    local tempStr    = "--°"
     local condStr    = "Clear"
-    local condColor  = { 1.0, 0.85, 0.30 }  -- default: sunny yellow
+    local condColor  = { 1.0, 0.85, 0.30 }
 
     if g_currentMission and g_currentMission.environment then
         local weather = g_currentMission.environment.weather
 
         if weather then
-            local isRaining  = weather.getIsRaining  and weather:getIsRaining()  or false
-            local isSnowing  = weather.getIsSnowing  and weather:getIsSnowing()  or false
-            local isHailing  = weather.getIsHailing  and weather:getIsHailing()  or false
+            local isRaining = weather.getIsRaining and weather:getIsRaining() or false
+            local isSnowing = weather.getIsSnowing and weather:getIsSnowing() or false
+            local isHailing = weather.getIsHailing and weather:getIsHailing() or false
 
             if isHailing then
                 condStr   = "Hail"
@@ -1461,7 +1451,6 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
                 condColor = { 1.0, 0.85, 0.30 }
             end
 
-            -- Temperature
             if weather.temperatureUpdater then
                 local env  = g_currentMission.environment
                 local temp = weather.temperatureUpdater:getTemperatureAtTime(env.dayTime)
@@ -1477,16 +1466,64 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
         end
     end
 
-    -- Condition label (e.g. "Clear", "Rain")
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(false)
-    setTextColor(condColor[1], condColor[2], condColor[3], 0.95)
-    renderText(cx, widgetY + 0.020, 0.014, condStr)
+    -- Map condStr to icon key
+    local condKey = "Clear"
+    if     condStr == "Hail"       then condKey = "Hail"
+    elseif condStr == "Snow"       then condKey = "Snow"
+    elseif condStr == "Heavy Rain" then condKey = "HeavyRain"
+    elseif condStr == "Rain"       then condKey = "Rain"
+    else                                condKey = "Clear"
+    end
 
-    -- Temperature (big-ish, white)
+    -- City / map name
+    local cityStr = ""
+    if g_currentMission and g_currentMission.missionInfo then
+        cityStr = g_currentMission.missionInfo.mapTitle or ""
+    end
+
+    -- Layout: centered stack — icon, temp, condition, city
+    local iconSz  = 0.065 * self.arScale
+    local iconH   = iconSz * self.actualAR
+    local iconX   = cx - iconSz / 2                 -- centered
+    local iconTopY = py + ph * 0.62                 -- upper-center of the content area
+
+    local condIcon = self.weatherIcons and self.weatherIcons[condKey]
+    if condIcon and condIcon ~= 0 then
+        setOverlayColor(condIcon, 1, 1, 1, 0.95)
+        renderOverlay(condIcon, iconX, iconTopY, iconSz, iconH)
+    end
+
+    -- Dark backdrop behind the entire widget (icon + all text)
+    local bgW = pw * 0.58
+    local bgH = iconH + 0.075           -- icon height + room for all text below
+    local bgX = cx - bgW / 2
+    local bgY = iconTopY - 0.090        -- bottom edge (below city text)
+    self:drawRect(bgX, bgY, bgW, bgH, 0.0, 0.0, 0.0, 0.38)
+
+    -- Icon (drawn on top of backdrop)
+    if condIcon and condIcon ~= 0 then
+        setOverlayColor(condIcon, 1, 1, 1, 0.95)
+        renderOverlay(condIcon, iconX, iconTopY, iconSz, iconH)
+    end
+
+    setTextAlignment(RenderText.ALIGN_CENTER)
+
+    -- Temperature
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(cx, widgetY, 0.022, tempStr)
+    renderText(cx, iconTopY - 0.022, 0.036, tempStr)
+
+    -- Condition label
+    setTextBold(false)
+    setTextColor(condColor[1], condColor[2], condColor[3], 1.0)
+    renderText(cx, iconTopY - 0.058, 0.014, condStr)
+
+    -- City / map name
+    if cityStr ~= "" then
+        setTextColor(0.85, 0.90, 1.0, 0.90)
+        renderText(cx, iconTopY - 0.076, 0.011, "@ " .. cityStr)
+    end
+
     setTextBold(false)
 end
 
@@ -1945,6 +1982,27 @@ function RoleplayPhone:onHitboxClicked(hb)
     end
 
     -- ── Settings screen ────────────────────────────────────────────────────
+    if hb.id == "settings_tab_general"   then self.settingsTab = "general";   return end
+    if hb.id == "settings_tab_wallpaper" then self.settingsTab = "wallpaper"; return end
+
+    if hb.id == "wallp_prev" then
+        local cur = self.previewWallpaper or self.settings.wallpaperIndex
+        self.previewWallpaper = ((cur - 2) % #self.WALLPAPERS) + 1
+        return
+    end
+    if hb.id == "wallp_next" then
+        local cur = self.previewWallpaper or self.settings.wallpaperIndex
+        self.previewWallpaper = (cur % #self.WALLPAPERS) + 1
+        return
+    end
+    if hb.id == "wallp_apply" then
+        if self.previewWallpaper then
+            self.settings.wallpaperIndex = self.previewWallpaper
+            self:saveSettings()
+        end
+        return
+    end
+
     if hb.id == "setting_timeformat_12" then
         self.settings.timeFormat = "12"
         RoleplayPhone:saveSettings()
@@ -1970,17 +2028,35 @@ function RoleplayPhone:onHitboxClicked(hb)
         RoleplayPhone:saveSettings()
         return
     end
-    if hb.id:sub(1, 14) == "setting_wallp_" then
-        local idx = tonumber(hb.id:sub(15))
-        if idx and self.WALLPAPERS[idx] then
-            self.settings.wallpaperIndex = idx
-            RoleplayPhone:saveSettings()
-        end
-        return
-    end
 end
 
--- ─── Submit invoice form ──────────────────────────────────────────────────────
+-- Read the player's bound key for RI_CALL_ACTION from inputBinding.xml
+-- Returns a display string like "F7", "F8", "G", etc.
+function RoleplayPhone:getCallActionKeyName()
+    if self._callKeyName then return self._callKeyName end
+    self._callKeyName = "F8"  -- safe default
+    local xmlPath = getUserProfileAppPath() .. "inputBinding.xml"
+    local xmlFile = loadXMLFile("RP_InputBinding", xmlPath)
+    if not xmlFile or xmlFile == 0 then return self._callKeyName end
+    local i = 0
+    while true do
+        local key = string.format("inputBinding.actionBinding(%d)", i)
+        if not hasXMLProperty(xmlFile, key) then break end
+        local action = getXMLString(xmlFile, key .. "#action")
+        if action == "RI_CALL_ACTION" then
+            local input = getXMLString(xmlFile, key .. ".binding(0)#input") or ""
+            -- Convert "KEY_f7" -> "F7", "KEY_g" -> "G" etc.
+            local name = input:match("^KEY_(.+)$")
+            if name then
+                self._callKeyName = name:upper()
+            end
+            break
+        end
+        i = i + 1
+    end
+    delete(xmlFile)
+    return self._callKeyName
+end
 function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
     if not isDown then return false end
 
@@ -2112,18 +2188,23 @@ function RoleplayPhone:registerKeybind()
     end
     g_inputBinding:endActionEventsModification()
 
-    -- Register F8 outside any context so it fires on foot AND in vehicles
-    local _, callEventId = g_inputBinding:registerActionEvent(
-        "RI_CALL_ACTION", RoleplayPhone, RoleplayPhone.callAction,
-        false, true, false, true)
-    self.callActionEventId = callEventId
-    if callEventId then
-        g_inputBinding:setActionEventText(callEventId, g_i18n:getText("input_RI_CALL_ACTION"))
-        g_inputBinding:setActionEventTextPriority(callEventId, GS_PRIO_NORMAL or 0)
-        g_inputBinding:setActionEventTextVisibility(callEventId, false)
-        print("[RoleplayPhone] RI_CALL_ACTION registered OK: " .. tostring(callEventId))
-    else
-        print("[RoleplayPhone] WARNING: RI_CALL_ACTION registration failed")
+    -- Register F8 in both PLAYER and VEHICLE contexts so it fires on foot AND in vehicles
+    for _, context in ipairs({"PLAYER", "VEHICLE"}) do
+        g_inputBinding:beginActionEventsModification(context)
+        local _, callEventId = g_inputBinding:registerActionEvent(
+            "RI_CALL_ACTION", RoleplayPhone, RoleplayPhone.callAction,
+            false, true, false, true)
+        if context == "PLAYER" then
+            self.callActionEventId = callEventId
+            if callEventId then
+                g_inputBinding:setActionEventText(callEventId, g_i18n:getText("input_RI_CALL_ACTION"))
+                g_inputBinding:setActionEventTextPriority(callEventId, GS_PRIO_NORMAL or 0)
+                print("[RoleplayPhone] RI_CALL_ACTION registered OK: " .. tostring(callEventId))
+            else
+                print("[RoleplayPhone] WARNING: RI_CALL_ACTION registration failed")
+            end
+        end
+        g_inputBinding:endActionEventsModification()
     end
 
     self.inputRegistered = true
@@ -2158,34 +2239,13 @@ function RoleplayPhone:handleBackspace()
     end
 end
 
--- Poll F8 key state every frame — works in vehicles where keyboardEvent doesn't fire
+-- updateCallKeyPoll is kept as a stub — call handling is done via RI_CALL_ACTION
+-- which is registered as a proper remappable action event in registerKeybind()
 function RoleplayPhone:updateCallKeyPoll()
-    local isInCall = self.state == self.STATE.CALL_INCOMING
-                  or self.state == self.STATE.CALL_OUTGOING
-                  or self.state == self.STATE.CALL_ACTIVE
-    if not isInCall then
-        self._f8WasDown = false
-        return
-    end
-
-    local isDown = Input.isKeyPressed ~= nil and Input.isKeyPressed(Input.KEY_f8)
-
-    -- Edge trigger: only fire on press, not hold
-    if isDown and not self._f8WasDown then
-        print("[RoleplayPhone] F8 polled — triggering callAction")
-        self:callAction()
-    end
-    self._f8WasDown = isDown
 end
--- FS25 calls Mission00.keyboardEvent(unicode, sym, modifier, isDown) every frame
--- a key is pressed. We forward to RoleplayPhone:keyEvent which handles all field input.
+
 Mission00.keyboardEvent = Utils.appendedFunction(Mission00.keyboardEvent,
     function(mission, unicode, sym, modifier, isDown)
-        -- F8 for call answer/hangup — detected at mission level so it works in vehicles too
-        if isDown and Input.KEY_f8 ~= nil and sym == Input.KEY_f8 then
-            print("[RoleplayPhone] F8 detected in keyboardEvent, state=" .. tostring(RoleplayPhone.state))
-            RoleplayPhone:callAction()
-        end
         if RoleplayPhone.state ~= RoleplayPhone.STATE.CLOSED then
             RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
         end
@@ -2215,11 +2275,20 @@ Mission00.deleteMap = Utils.appendedFunction(Mission00.deleteMap, function(missi
     RoleplayPhone.inputRegistered = false
     -- Clean up texture overlays
     if RoleplayPhone.whiteOverlay   and RoleplayPhone.whiteOverlay   ~= 0 then delete(RoleplayPhone.whiteOverlay)   end
-    if RoleplayPhone.wallpaper      and RoleplayPhone.wallpaper      ~= 0 then delete(RoleplayPhone.wallpaper)      end
+    if RoleplayPhone.wallpaper             and RoleplayPhone.wallpaper             ~= 0 then delete(RoleplayPhone.wallpaper)             end
+    if RoleplayPhone.wallpaperBarnSilos    and RoleplayPhone.wallpaperBarnSilos    ~= 0 then delete(RoleplayPhone.wallpaperBarnSilos)    end
+    if RoleplayPhone.wallpaperBigRedBarn   and RoleplayPhone.wallpaperBigRedBarn   ~= 0 then delete(RoleplayPhone.wallpaperBigRedBarn)   end
+    if RoleplayPhone.wallpaperWinterRedBarn and RoleplayPhone.wallpaperWinterRedBarn ~= 0 then delete(RoleplayPhone.wallpaperWinterRedBarn) end
+    if RoleplayPhone.wallpaperHayBales     and RoleplayPhone.wallpaperHayBales     ~= 0 then delete(RoleplayPhone.wallpaperHayBales)     end
     if RoleplayPhone.iconInvoices   and RoleplayPhone.iconInvoices   ~= 0 then delete(RoleplayPhone.iconInvoices)   end
     if RoleplayPhone.iconContacts   and RoleplayPhone.iconContacts   ~= 0 then delete(RoleplayPhone.iconContacts)   end
     if RoleplayPhone.iconCalls      and RoleplayPhone.iconCalls      ~= 0 then delete(RoleplayPhone.iconCalls)      end
     if RoleplayPhone.iconSettings   and RoleplayPhone.iconSettings   ~= 0 then delete(RoleplayPhone.iconSettings)   end
+    if RoleplayPhone.weatherIcons then
+        for _, icon in pairs(RoleplayPhone.weatherIcons) do
+            if icon and icon ~= 0 then delete(icon) end
+        end
+    end
 end)
 
 -- Hook into FS25's save system so our file is written as part of normal game save

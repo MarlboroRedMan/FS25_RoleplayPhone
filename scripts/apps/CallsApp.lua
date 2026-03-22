@@ -64,10 +64,10 @@
         renderText(cx, btnY + 0.008, 0.010, "End Call")
     end
 
-    -- F8 hint
+    -- Key hint — shows just the bound key name
     setTextBold(false)
     setTextColor(0.50, 0.60, 0.75, 0.70)
-    renderText(cx, btnY - 0.014, 0.009, "Press F8 to answer / hang up")
+    renderText(cx, py + 0.004, 0.009, "Press " .. self:getCallActionKeyName() .. " to answer / hang up")
 end
 
 -- ─── CONTACTS LIST screen ─────────────────────────────────────────────────────
