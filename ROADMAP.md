@@ -43,6 +43,7 @@
 - Conversation threads per contact
 - New message notification
 - Backspace works correctly in message compose
+- Message history (current session)
 
 ### 📇 Contacts Overhaul
 - Contacts list on small phone screen
