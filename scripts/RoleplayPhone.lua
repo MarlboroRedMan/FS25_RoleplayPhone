@@ -2033,11 +2033,10 @@ end
 -- Read the player's bound key for RI_CALL_ACTION from inputBinding.xml
 -- Returns a display string like "F7", "F8", "G", etc.
 function RoleplayPhone:getCallActionKeyName()
-    if self._callKeyName then return self._callKeyName end
-    self._callKeyName = "F8"  -- safe default
+    local result = "F8"  -- safe default
     local xmlPath = getUserProfileAppPath() .. "inputBinding.xml"
     local xmlFile = loadXMLFile("RP_InputBinding", xmlPath)
-    if not xmlFile or xmlFile == 0 then return self._callKeyName end
+    if not xmlFile or xmlFile == 0 then return result end
     local i = 0
     while true do
         local key = string.format("inputBinding.actionBinding(%d)", i)
@@ -2045,17 +2044,16 @@ function RoleplayPhone:getCallActionKeyName()
         local action = getXMLString(xmlFile, key .. "#action")
         if action == "RI_CALL_ACTION" then
             local input = getXMLString(xmlFile, key .. ".binding(0)#input") or ""
-            -- Convert "KEY_f7" -> "F7", "KEY_g" -> "G" etc.
             local name = input:match("^KEY_(.+)$")
             if name then
-                self._callKeyName = name:upper()
+                result = name:upper()
             end
             break
         end
         i = i + 1
     end
     delete(xmlFile)
-    return self._callKeyName
+    return result
 end
 function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
     if not isDown then return false end
