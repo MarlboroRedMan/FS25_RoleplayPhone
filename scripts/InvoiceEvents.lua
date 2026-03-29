@@ -6,6 +6,77 @@ InvoiceEvents = {}
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- EVENT 0: PlayerHello — client announces itself on connect
+-- Carries playerUserId, farmId, playerName, phoneNumber
+-- Host stores in RoleplayPhone.onlineUsers and uses for call/message routing
+-- ─────────────────────────────────────────────────────────────────────────────
+
+if RI_PlayerHelloEvent == nil then
+    RI_PlayerHelloEvent    = {}
+    RI_PlayerHelloEvent_mt = Class(RI_PlayerHelloEvent, Event)
+    InitEventClass(RI_PlayerHelloEvent, "RI_PlayerHelloEvent")
+end
+
+function RI_PlayerHelloEvent.emptyNew()
+    return Event.new(RI_PlayerHelloEvent_mt)
+end
+
+function RI_PlayerHelloEvent.new(playerUserId, farmId, playerName, phoneNumber)
+    local self = RI_PlayerHelloEvent.emptyNew()
+    self.playerUserId = playerUserId
+    self.farmId       = farmId
+    self.playerName   = playerName   or ""
+    self.phoneNumber  = phoneNumber  or ""
+    return self
+end
+
+function RI_PlayerHelloEvent:writeStream(streamId, connection)
+    streamWriteInt32(streamId,  self.playerUserId or 0)
+    streamWriteInt32(streamId,  self.farmId       or 0)
+    streamWriteString(streamId, self.playerName   or "")
+    streamWriteString(streamId, self.phoneNumber  or "")
+end
+
+function RI_PlayerHelloEvent:readStream(streamId, connection)
+    self.playerUserId = streamReadInt32(streamId)
+    self.farmId       = streamReadInt32(streamId)
+    self.playerName   = streamReadString(streamId)
+    self.phoneNumber  = streamReadString(streamId)
+    self:run(connection)
+end
+
+function RI_PlayerHelloEvent:run(connection)
+    -- Server: store this player in onlineUsers and broadcast to all clients
+    if g_server ~= nil then
+        RoleplayPhone.onlineUsers[self.playerUserId] = {
+            farmId      = self.farmId,
+            name        = self.playerName,
+            phone       = self.phoneNumber,
+            connection  = connection,
+        }
+        -- Broadcast to all clients so everyone knows who's online
+        g_server:broadcastEvent(
+            RI_PlayerHelloEvent.new(self.playerUserId, self.farmId,
+                                    self.playerName, self.phoneNumber),
+            false, connection)
+        print(string.format("[RoleplayPhone] PlayerHello: %s (userId=%d farmId=%d phone=%s)",
+            self.playerName, self.playerUserId, self.farmId, self.phoneNumber))
+        return
+    end
+    -- Client: store in local onlineUsers table
+    RoleplayPhone.onlineUsers[self.playerUserId] = {
+        farmId = self.farmId,
+        name   = self.playerName,
+        phone  = self.phoneNumber,
+    }
+    print(string.format("[RoleplayPhone] PlayerHello received: %s (userId=%d)",
+        self.playerName, self.playerUserId))
+end
+
+InvoiceEvents.PlayerHelloEvent = RI_PlayerHelloEvent
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- EVENT 1: Send a new invoice to all clients
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -99,9 +170,13 @@ function RI_SendInvoiceEvent:run(connection)
                 if ff and ff.name then fromName = ff.name end
             end
             NotificationManager:push("invoice",
-                string.format("From %s  $%s",
+                string.format(g_i18n:getText("phone_notif_invoice_received"),
                     fromName,
                     tostring(math.floor(self.invoice.amount or 0))))
+            -- Play notification sound
+            if RoleplayPhone.notifSample and RoleplayPhone.notifSample ~= 0 then
+                playSample(RoleplayPhone.notifSample, 1, 1.0, 1.0, 0, 0)
+            end
         end
     end
 
@@ -219,7 +294,7 @@ function RI_PingEvent:run(connection)
             if ff and ff.name then fromName = ff.name end
         end
         NotificationManager:push("ping",
-            string.format("%s: %s", fromName, self.message))
+            string.format(g_i18n:getText("phone_notif_ping_fmt"), fromName, self.message))
     end
 
     print(string.format("[InvoiceEvents] Ping Farm %d -> Farm %d: %s",
@@ -243,27 +318,27 @@ function RI_MessageEvent.emptyNew()
     return Event.new(RI_MessageEvent_mt)
 end
 
-function RI_MessageEvent.new(fromFarmId, toFarmId, senderName, text, gameDay)
+function RI_MessageEvent.new(fromUserId, toUserId, senderName, text, gameDay)
     local self = RI_MessageEvent.emptyNew()
-    self.fromFarmId  = fromFarmId
-    self.toFarmId    = toFarmId
-    self.senderName  = senderName  -- farm name for contact matching on receive
+    self.fromUserId  = fromUserId
+    self.toUserId    = toUserId
+    self.senderName  = senderName  -- player name for display
     self.text        = text
     self.gameDay     = gameDay or 0
     return self
 end
 
 function RI_MessageEvent:writeStream(streamId, connection)
-    streamWriteInt32(streamId,  self.fromFarmId or 0)
-    streamWriteInt32(streamId,  self.toFarmId   or 0)
+    streamWriteInt32(streamId,  self.fromUserId or 0)
+    streamWriteInt32(streamId,  self.toUserId   or 0)
     streamWriteString(streamId, self.senderName or "")
     streamWriteString(streamId, self.text       or "")
     streamWriteInt32(streamId,  self.gameDay    or 0)
 end
 
 function RI_MessageEvent:readStream(streamId, connection)
-    self.fromFarmId = streamReadInt32(streamId)
-    self.toFarmId   = streamReadInt32(streamId)
+    self.fromUserId = streamReadInt32(streamId)
+    self.toUserId   = streamReadInt32(streamId)
     self.senderName = streamReadString(streamId)
     self.text       = streamReadString(streamId)
     self.gameDay    = streamReadInt32(streamId)
@@ -274,37 +349,49 @@ function RI_MessageEvent:run(connection)
     -- Server forwards to all other clients
     if connection ~= nil and not connection:getIsServer() then
         g_server:broadcastEvent(
-            RI_MessageEvent.new(self.fromFarmId, self.toFarmId,
+            RI_MessageEvent.new(self.fromUserId, self.toUserId,
                                 self.senderName, self.text, self.gameDay),
             false, connection)
     end
 
-    local myFarmId = RoleplayPhone:getMyFarmId()
-    if self.toFarmId ~= myFarmId then return end  -- not for us
+    local myUserId = RoleplayPhone:getMyUserId()
+    if self.toUserId ~= myUserId then return end  -- not for us
 
-    -- Find matching contact by farm name and store message in their thread
+    -- Find matching contact by playerUserId and store message in their thread
     local contacts = ContactManager.contacts or {}
     local matched  = false
     for i, contact in ipairs(contacts) do
-        if contact.farmName and contact.farmName ~= ""
-        and string.lower(contact.farmName) == string.lower(self.senderName) then
-            RoleplayPhone:receiveMessage(i, self.fromFarmId, self.senderName,
+        if contact.playerUserId and contact.playerUserId == self.fromUserId then
+            RoleplayPhone:receiveMessage(i, self.fromUserId, self.senderName,
                                          self.text, self.gameDay, false)
             matched = true
             break
         end
     end
 
-    -- If no contact match, store under farmName anyway so nothing is lost
+    -- Fallback: match by player name if no userId match (e.g. old contacts)
     if not matched then
-        RoleplayPhone:receiveMessage("unknown_" .. tostring(self.fromFarmId),
-            self.fromFarmId, self.senderName, self.text, self.gameDay, false)
-        NotificationManager:push("ping",
-            string.format("MSG from %s: %s", self.senderName, self.text))
+        for i, contact in ipairs(contacts) do
+            if contact.name and contact.name ~= ""
+            and string.lower(contact.name) == string.lower(self.senderName) then
+                RoleplayPhone:receiveMessage(i, self.fromUserId, self.senderName,
+                                             self.text, self.gameDay, false)
+                matched = true
+                break
+            end
+        end
     end
 
-    print(string.format("[InvoiceEvents] Message Farm %d -> Farm %d: %s",
-        self.fromFarmId, self.toFarmId, self.text))
+    -- No contact match — store under userId key so nothing is lost
+    if not matched then
+        RoleplayPhone:receiveMessage("unknown_" .. tostring(self.fromUserId),
+            self.fromUserId, self.senderName, self.text, self.gameDay, false)
+        NotificationManager:push("ping",
+            string.format(g_i18n:getText("phone_notif_msg_from"), self.senderName, self.text))
+    end
+
+    print(string.format("[InvoiceEvents] Message userId %d -> userId %d: %s",
+        self.fromUserId, self.toUserId, self.text))
 end
 
 InvoiceEvents.MessageEvent = RI_MessageEvent
@@ -458,11 +545,11 @@ function RI_CallEvent.emptyNew()
     return Event.new(RI_CallEvent_mt)
 end
 
-function RI_CallEvent.new(callType, fromFarmId, toFarmId, callerName, callerNum)
+function RI_CallEvent.new(callType, fromUserId, toUserId, callerName, callerNum)
     local self = RI_CallEvent.emptyNew()
     self.callType   = callType    -- "ring" | "answer" | "decline" | "end"
-    self.fromFarmId = fromFarmId
-    self.toFarmId   = toFarmId
+    self.fromUserId = fromUserId
+    self.toUserId   = toUserId
     self.callerName = callerName or ""
     self.callerNum  = callerNum  or ""
     return self
@@ -470,16 +557,16 @@ end
 
 function RI_CallEvent:writeStream(streamId, connection)
     streamWriteString(streamId, self.callType   or "")
-    streamWriteInt32(streamId,  self.fromFarmId or 0)
-    streamWriteInt32(streamId,  self.toFarmId   or 0)
+    streamWriteInt32(streamId,  self.fromUserId or 0)
+    streamWriteInt32(streamId,  self.toUserId   or 0)
     streamWriteString(streamId, self.callerName or "")
     streamWriteString(streamId, self.callerNum  or "")
 end
 
 function RI_CallEvent:readStream(streamId, connection)
     self.callType   = streamReadString(streamId)
-    self.fromFarmId = streamReadInt32(streamId)
-    self.toFarmId   = streamReadInt32(streamId)
+    self.fromUserId = streamReadInt32(streamId)
+    self.toUserId   = streamReadInt32(streamId)
     self.callerName = streamReadString(streamId)
     self.callerNum  = streamReadString(streamId)
     self:run(connection)
@@ -489,16 +576,16 @@ function RI_CallEvent:run(connection)
     -- Server forwards to all other clients
     if connection ~= nil and not connection:getIsServer() then
         g_server:broadcastEvent(
-            RI_CallEvent.new(self.callType, self.fromFarmId, self.toFarmId,
+            RI_CallEvent.new(self.callType, self.fromUserId, self.toUserId,
                              self.callerName, self.callerNum),
             false, connection)
     end
 
-    local myFarmId = RoleplayPhone:getMyFarmId()
-    if self.toFarmId ~= myFarmId then return end  -- not for us
+    local myUserId = RoleplayPhone:getMyUserId()
+    if self.toUserId ~= myUserId then return end  -- not for us
 
     if self.callType == "ring" then
-        RoleplayPhone:onIncomingCall(self.fromFarmId, self.callerName, self.callerNum)
+        RoleplayPhone:onIncomingCall(self.fromUserId, self.callerName, self.callerNum)
     elseif self.callType == "answer" then
         RoleplayPhone:onCallAnswered()
     elseif self.callType == "decline" then
@@ -526,35 +613,37 @@ function RI_ContactEvent.emptyNew()
     return Event.new(RI_ContactEvent_mt)
 end
 
-function RI_ContactEvent.new(action, farmId, contactIndex, contactData)
+function RI_ContactEvent.new(action, playerUserId, contactIndex, contactData)
     local self = RI_ContactEvent.emptyNew()
-    self.action       = action        -- "add" | "delete"
-    self.farmId       = farmId
-    self.contactIndex = contactIndex  -- 1-based (used for "delete")
-    self.contactData  = contactData   -- {name,farmName,phone,notes} (used for "add")
+    self.action        = action
+    self.playerUserId  = playerUserId
+    self.contactIndex  = contactIndex  -- 1-based (used for "delete")
+    self.contactData   = contactData   -- {name,farmName,phone,notes,playerUserId} (used for "add")
     return self
 end
 
 function RI_ContactEvent:writeStream(streamId, connection)
-    streamWriteString(streamId, self.action   or "")
-    streamWriteInt32(streamId,  self.farmId   or 0)
+    streamWriteString(streamId, self.action       or "")
+    streamWriteInt32(streamId,  self.playerUserId or 0)
     streamWriteInt32(streamId,  self.contactIndex or 0)
     local d = self.contactData or {}
-    streamWriteString(streamId, d.name     or "")
-    streamWriteString(streamId, d.farmName or "")
-    streamWriteString(streamId, d.phone    or "")
-    streamWriteString(streamId, d.notes    or "")
+    streamWriteString(streamId, d.name          or "")
+    streamWriteString(streamId, d.farmName      or "")
+    streamWriteString(streamId, d.phone         or "")
+    streamWriteString(streamId, d.notes         or "")
+    streamWriteInt32(streamId,  d.playerUserId  or 0)
 end
 
 function RI_ContactEvent:readStream(streamId, connection)
     self.action       = streamReadString(streamId)
-    self.farmId       = streamReadInt32(streamId)
+    self.playerUserId = streamReadInt32(streamId)
     self.contactIndex = streamReadInt32(streamId)
     self.contactData  = {
-        name     = streamReadString(streamId),
-        farmName = streamReadString(streamId),
-        phone    = streamReadString(streamId),
-        notes    = streamReadString(streamId),
+        name         = streamReadString(streamId),
+        farmName     = streamReadString(streamId),
+        phone        = streamReadString(streamId),
+        notes        = streamReadString(streamId),
+        playerUserId = streamReadInt32(streamId),
     }
     self:run(connection)
 end
@@ -563,36 +652,37 @@ function RI_ContactEvent:run(connection)
     if self.action == "request" then
         -- Client is asking for their saved contacts — only server handles this
         if g_server == nil then return end
-        local list = ContactManager.farmContacts[self.farmId] or {}
+        local list = ContactManager.userContacts[self.playerUserId] or {}
         connection:sendEvent(RI_ContactSyncEvent.new(list))
-        print(string.format("[InvoiceEvents] Contact request from farm %d — sending %d contacts",
-            self.farmId, #list))
+        print(string.format("[InvoiceEvents] Contact request from userId %d — sending %d contacts",
+            self.playerUserId, #list))
         return
     end
 
-    -- Only the server persists contact changes (contacts are private per-farm)
+    -- Only the server persists contact changes
     if g_server == nil then return end
 
-    local farmId = self.farmId
-    if not ContactManager.farmContacts[farmId] then
-        ContactManager.farmContacts[farmId] = {}
+    local userId = self.playerUserId
+    if not ContactManager.userContacts[userId] then
+        ContactManager.userContacts[userId] = {}
     end
-    local list = ContactManager.farmContacts[farmId]
+    local list = ContactManager.userContacts[userId]
 
     if self.action == "add" then
         table.insert(list, {
-            name     = self.contactData.name     or "",
-            farmName = self.contactData.farmName or "",
-            phone    = self.contactData.phone    or "",
-            notes    = self.contactData.notes    or "",
+            name         = self.contactData.name         or "",
+            farmName     = self.contactData.farmName     or "",
+            phone        = self.contactData.phone        or "",
+            notes        = self.contactData.notes        or "",
+            playerUserId = self.contactData.playerUserId or 0,
         })
-        print(string.format("[InvoiceEvents] Contact added for farm %d: %s",
-            farmId, self.contactData.name or "?"))
+        print(string.format("[InvoiceEvents] Contact added for userId %d: %s",
+            userId, self.contactData.name or "?"))
     elseif self.action == "delete" then
         local idx = self.contactIndex
         if idx >= 1 and idx <= #list then
             table.remove(list, idx)
-            print(string.format("[InvoiceEvents] Contact #%d deleted for farm %d", idx, farmId))
+            print(string.format("[InvoiceEvents] Contact #%d deleted for userId %d", idx, userId))
         end
     end
 
@@ -625,10 +715,11 @@ end
 function RI_ContactSyncEvent:writeStream(streamId, connection)
     streamWriteInt32(streamId, #self.contacts)
     for _, c in ipairs(self.contacts) do
-        streamWriteString(streamId, c.name     or "")
-        streamWriteString(streamId, c.farmName or "")
-        streamWriteString(streamId, c.phone    or "")
-        streamWriteString(streamId, c.notes    or "")
+        streamWriteString(streamId, c.name         or "")
+        streamWriteString(streamId, c.farmName     or "")
+        streamWriteString(streamId, c.phone        or "")
+        streamWriteString(streamId, c.notes        or "")
+        streamWriteInt32(streamId,  c.playerUserId or 0)
     end
 end
 
@@ -637,10 +728,11 @@ function RI_ContactSyncEvent:readStream(streamId, connection)
     self.contacts = {}
     for i = 1, count do
         table.insert(self.contacts, {
-            name     = streamReadString(streamId),
-            farmName = streamReadString(streamId),
-            phone    = streamReadString(streamId),
-            notes    = streamReadString(streamId),
+            name         = streamReadString(streamId),
+            farmName     = streamReadString(streamId),
+            phone        = streamReadString(streamId),
+            notes        = streamReadString(streamId),
+            playerUserId = streamReadInt32(streamId),
         })
     end
     self:run(connection)

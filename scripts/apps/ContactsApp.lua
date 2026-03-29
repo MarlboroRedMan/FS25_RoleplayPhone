@@ -17,17 +17,17 @@
 
     -- Back button
     self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
-        "< Back", 0.18, 0.20, 0.28, 0.010)
+        g_i18n:getText("ui_btn_back"), 0.18, 0.20, 0.28, 0.010)
 
     -- Title
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Contacts")
+    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, g_i18n:getText("screen_title_contacts"))
 
     -- Add button (top-right)
     self:drawButton("btn_add_contact", px + pw - 0.068 * self.arScale, headerY + 0.008, 0.062 * self.arScale, 0.026,
-        "+ Add", 0.10, 0.38, 0.18, 0.012)
+        g_i18n:getText("contacts_btn_add"), 0.10, 0.38, 0.18, 0.012)
 
     -- ── Contact list ──────────────────────────────────────────────────────────
     local listY    = headerY - 0.008
@@ -40,7 +40,7 @@
         setTextBold(false)
         setTextColor(0.50, 0.52, 0.60, 0.8)
         renderText(px + pw / 2, py + ph / 2, 0.013,
-            "No contacts yet.  Tap  + Add  to save one.")
+            g_i18n:getText("contacts_empty_state"))
         return
     end
 
@@ -68,13 +68,13 @@
         setTextAlignment(RenderText.ALIGN_LEFT)
         setTextBold(true)
         setTextColor(0.90, 0.92, 1.0, 1.0)
-        renderText(textX, rowY - rowH + rowH * 0.52, 0.013, c.name or "Unknown")
+        renderText(textX, rowY - rowH + rowH * 0.52, 0.013, c.name or g_i18n:getText("phone_unknown_contact"))
 
         -- Farm name (sub-line)
         setTextBold(false)
         setTextColor(0.52, 0.62, 0.78, 0.9)
         renderText(textX, rowY - rowH + rowH * 0.18, 0.011,
-            (c.farmName ~= "" and c.farmName) or "No farm")
+            (c.farmName ~= "" and c.farmName) or g_i18n:getText("contacts_no_farm"))
 
         -- Phone (right side, green tint)
         if c.phone and c.phone ~= "" then
@@ -136,11 +136,11 @@ function RoleplayPhone:drawContactDetail()
     local headerY = py + ph - 0.012 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.08, 0.11, 0.18, 1.0)
     self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
-        "< Back", 0.12, 0.15, 0.22, 0.010)
+        g_i18n:getText("ui_btn_back"), 0.12, 0.15, 0.22, 0.010)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Contact")
+    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, g_i18n:getText("screen_title_contact_detail"))
 
     -- Avatar
     local avSz = pw * 0.25
@@ -157,7 +157,7 @@ function RoleplayPhone:drawContactDetail()
     -- Name
     setTextBold(true)
     setTextColor(0.92, 0.95, 1.0, 1.0)
-    renderText(px + pw/2, avY - 0.018, 0.014, c.name or "Unknown")
+    renderText(px + pw/2, avY - 0.018, 0.014, c.name or g_i18n:getText("phone_unknown_contact"))
 
     -- Info rows
     local infoY = avY - 0.040
@@ -176,8 +176,8 @@ function RoleplayPhone:drawContactDetail()
         infoY = infoY - rowH - gap
     end
 
-    infoRow("PHONE", c.phone)
-    infoRow("NOTES", c.notes)
+    infoRow(g_i18n:getText("contacts_label_phone"), c.phone)
+    infoRow(g_i18n:getText("contacts_label_notes"), c.notes)
 
     -- Message and Delete buttons
     local btnW = pw - 0.020
@@ -185,11 +185,11 @@ function RoleplayPhone:drawContactDetail()
     local btnX = px + 0.010
 
     self:drawButton("btn_call",           btnX, py + 0.092, btnW, btnH,
-        "Call",           0.10, 0.48, 0.22, 0.011)
+        g_i18n:getText("contacts_btn_call"),    0.10, 0.48, 0.22, 0.011)
     self:drawButton("btn_message_contact", btnX, py + 0.052, btnW, btnH,
-        "Message",        0.10, 0.35, 0.55, 0.011)
+        g_i18n:getText("contacts_btn_message"), 0.10, 0.35, 0.55, 0.011)
     self:drawButton("btn_delete_contact",  btnX, py + 0.012, btnW, btnH,
-        "Delete Contact", 0.50, 0.10, 0.10, 0.010)
+        g_i18n:getText("contacts_btn_delete"),  0.50, 0.10, 0.10, 0.010)
 end
 
 -- ─── MESSAGE THREAD screen (big screen) ──────────────────────────────────────
@@ -219,17 +219,17 @@ function RoleplayPhone:drawMessageThread()
     self:drawRect(px, headerY, pw, headerH, 0.07, 0.10, 0.16, 1.0)
 
     self:drawButton("btn_back", px + 0.006, headerY + 0.016, 0.055 * self.arScale, 0.030,
-        "< Back", 0.15, 0.18, 0.26, 0.011)
+        g_i18n:getText("ui_btn_back"), 0.15, 0.18, 0.26, 0.011)
 
     -- Call button (top right of header)
     self:drawButton("btn_call", px + pw - 0.080 * self.arScale, headerY + 0.016, 0.068 * self.arScale, 0.030,
-        "Call", 0.10, 0.48, 0.22, 0.011)
+        g_i18n:getText("contacts_btn_call"), 0.10, 0.48, 0.22, 0.011)
 
     -- Name centered in header
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(0.92, 0.95, 1.0, 1.0)
-    renderText(px + pw/2, headerY + headerH * 0.28, 0.014, c.name or "Unknown")
+    renderText(px + pw/2, headerY + headerH * 0.28, 0.014, c.name or g_i18n:getText("phone_unknown_contact"))
     setTextBold(false)
 
     -- ── Compose bar (bottom) ──────────────────────────────────────────────────
@@ -253,7 +253,7 @@ function RoleplayPhone:drawMessageThread()
     self:drawRect(fieldX, pillY + pillH - 0.002, fieldW, 0.002, 0.3, 0.4, 0.6,
         active and 0.8 or 0.3)
 
-    local displayText = (compose.text == "" and not active) and "Message..." or compose.text
+    local displayText = (compose.text == "" and not active) and g_i18n:getText("contacts_msg_placeholder") or compose.text
     local displayCol  = (compose.text == "" and not active) and 0.40 or 1.0
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(false)
@@ -269,7 +269,7 @@ function RoleplayPhone:drawMessageThread()
     local sbG = canSend and 0.42 or 0.18
     local sbB = canSend and 0.22 or 0.20
     self:drawButton("btn_send_message", sbX, pillY, sendBtnW - 0.004, pillH,
-        "Send", sbR, sbG, sbB, 0.010)
+        g_i18n:getText("contacts_btn_send"), sbR, sbG, sbB, 0.010)
 
     -- ── Message thread (between header and compose bar) ───────────────────────
     local threadTop = headerY - 0.008
@@ -286,9 +286,9 @@ function RoleplayPhone:drawMessageThread()
         setTextBold(false)
         setTextColor(0.35, 0.40, 0.50, 0.8)
         renderText(px + pw/2, threadBot + threadH/2, 0.012,
-            "No messages yet.")
+            g_i18n:getText("contacts_msg_empty"))
         renderText(px + pw/2, threadBot + threadH/2 - 0.018, 0.010,
-            "Say something!")
+            g_i18n:getText("contacts_msg_prompt"))
     else
         -- Show most recent messages that fit, newest at bottom
         -- Calculate how many we can fit
@@ -322,7 +322,7 @@ function RoleplayPhone:drawMessageThread()
             setTextAlignment(isSent and RenderText.ALIGN_RIGHT or RenderText.ALIGN_LEFT)
             setTextColor(0.55, 0.65, 0.75, 0.7)
             renderText(textX, curY + bubbleH * 0.68, 0.008,
-                string.format("Day %d", msg.gameDay or 0))
+                string.format(g_i18n:getText("ui_day_fmt"), msg.gameDay or 0))
 
             curY = curY + bubbleH + bubbleGap
         end
@@ -348,14 +348,13 @@ function RoleplayPhone:drawContactCreate()
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
 
     self:drawButton("btn_back", px + 0.006, headerY + 0.010, 0.055 * self.arScale, 0.030,
-        "< Back", 0.18, 0.20, 0.28, 0.011)
+        g_i18n:getText("ui_btn_back"), 0.18, 0.20, 0.28, 0.011)
 
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.30, 0.016, "New Contact")
+    renderText(px + pw / 2, headerY + headerH * 0.30, 0.016, g_i18n:getText("screen_title_new_contact"))
 
-    -- Fields (no X buttons — use Backspace to delete)
     local f    = self.contactForm
     local fX   = px + 0.012
     local fW   = pw - 0.024
@@ -363,14 +362,81 @@ function RoleplayPhone:drawContactCreate()
     local fGap = 0.008
     local fY   = headerY - 0.014
 
+    -- Name field (free text)
     fY = fY - fH
-    self:drawField("cf_name",     fX, fY, fW, fH, "Name",         f.name,     f.activeField == "name")
+    self:drawField("cf_name", fX, fY, fW, fH, g_i18n:getText("contacts_field_name"), f.name, f.activeField == "name")
+
+    -- ── Online player picker (replaces free-text farmName) ────────────────────
     fY = fY - fH - fGap
-    self:drawField("cf_farmName", fX, fY, fW, fH, "Farm Name",    f.farmName, f.activeField == "farmName")
+
+    -- Build sorted list of online players (excluding ourselves)
+    local myUserId = self:getMyUserId()
+    local onlineList = {}
+    for uid, info in pairs(self.onlineUsers) do
+        if uid ~= myUserId then
+            table.insert(onlineList, { userId = uid, name = info.name, phone = info.phone, farmId = info.farmId })
+        end
+    end
+    table.sort(onlineList, function(a, b) return a.name < b.name end)
+
+    -- Label
+    setTextAlignment(RenderText.ALIGN_LEFT)
+    setTextBold(false)
+    setTextColor(0.6, 0.7, 0.8, 0.9)
+    renderText(fX + 0.008, fY + fH - 0.013, 0.010, g_i18n:getText("contacts_field_player"))
+
+    if #onlineList == 0 then
+        -- Nobody online to add
+        self:drawRect(fX, fY, fW, fH, 0.10, 0.14, 0.20, 1.0)
+        setTextAlignment(RenderText.ALIGN_CENTER)
+        setTextBold(false)
+        setTextColor(0.45, 0.50, 0.60, 0.8)
+        renderText(fX + fW / 2, fY + fH * 0.28, 0.011, g_i18n:getText("contacts_no_players_online"))
+    else
+        -- Clamp picker index
+        local maxIdx = #onlineList
+        if not self.contactForm.playerPickerIdx or self.contactForm.playerPickerIdx < 1 then
+            self.contactForm.playerPickerIdx = 1
+        elseif self.contactForm.playerPickerIdx > maxIdx then
+            self.contactForm.playerPickerIdx = maxIdx
+        end
+
+        local idx      = self.contactForm.playerPickerIdx
+        local selected = onlineList[idx]
+        local arrowW   = 0.026 * self.arScale
+        local nameW    = fW - arrowW * 2 - 0.008
+
+        -- Arrow left
+        self:drawButton("cf_player_prev", fX, fY, arrowW, fH, "<", 0.15, 0.20, 0.35, 0.013)
+
+        -- Player name display
+        local nameX = fX + arrowW + 0.004
+        self:drawRect(nameX, fY, nameW, fH, 0.12, 0.16, 0.28, 1.0)
+        setTextAlignment(RenderText.ALIGN_CENTER)
+        setTextBold(true)
+        setTextColor(1, 1, 1, 1)
+        renderText(nameX + nameW / 2, fY + fH * 0.42, 0.012, selected.name)
+        setTextBold(false)
+        setTextColor(0.45, 0.78, 0.45, 0.85)
+        renderText(nameX + nameW / 2, fY + fH * 0.14, 0.009, selected.phone)
+
+        -- Index indicator
+        setTextColor(0.45, 0.50, 0.65, 0.60)
+        renderText(nameX + nameW / 2, fY + fH * 0.70, 0.008,
+            string.format("%d / %d", idx, maxIdx))
+
+        -- Arrow right
+        self:drawButton("cf_player_next", nameX + nameW + 0.004, fY, arrowW, fH, ">", 0.15, 0.20, 0.35, 0.013)
+
+        -- Sync contactForm fields from selection
+        f.farmName     = self:getFarmName(selected.farmId)
+        f.phone        = selected.phone
+        f.playerUserId = selected.userId
+    end
+
+    -- Notes field
     fY = fY - fH - fGap
-    self:drawField("cf_phone",    fX, fY, fW, fH, "Phone (RP #)", f.phone,    f.activeField == "phone")
-    fY = fY - fH - fGap
-    self:drawField("cf_notes",    fX, fY, fW, fH, "Notes",        f.notes,    f.activeField == "notes")
+    self:drawField("cf_notes", fX, fY, fW, fH, g_i18n:getText("contacts_field_notes"), f.notes, f.activeField == "notes")
 
     -- Validation hint
     if f.name == "" then
@@ -378,28 +444,30 @@ function RoleplayPhone:drawContactCreate()
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextBold(false)
         setTextColor(0.80, 0.55, 0.20, 0.85)
-        renderText(px + pw / 2, fY + 0.006, 0.010, "Name is required")
+        renderText(px + pw / 2, fY + 0.006, 0.010, g_i18n:getText("contacts_validation_name"))
     end
 
     -- Save button
     fY = fY - fH - 0.012
-    local canSave = f.name and f.name ~= ""
+    local canSave = f.name and f.name ~= "" and f.playerUserId and f.playerUserId ~= 0
     local btnR = canSave and 0.10 or 0.20
     local btnG = canSave and 0.38 or 0.22
     local btnB = canSave and 0.18 or 0.22
     self:drawButton("btn_save_contact", fX, fY, fW, fH,
-        "Save Contact", btnR, btnG, btnB, 0.013)
+        g_i18n:getText("contacts_btn_save"), btnR, btnG, btnB, 0.013)
 end
 
 
 -- ─── resetContactForm helper ──────────────────────────────────────────────────
 function RoleplayPhone:resetContactForm()
     self.contactForm = {
-        name        = "",
-        farmName    = "",
-        phone       = "",
-        notes       = "",
-        activeField = nil,
+        name            = "",
+        farmName        = "",
+        phone           = "",
+        notes           = "",
+        playerUserId    = 0,
+        playerPickerIdx = 1,
+        activeField     = nil,
     }
 end
 

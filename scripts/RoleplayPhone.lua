@@ -37,7 +37,15 @@ RoleplayPhone.state          = RoleplayPhone.STATE.CLOSED
 RoleplayPhone.isOpen         = false   -- true while phone UI is visible (context pushed)
 RoleplayPhone.phoneContextEventId = nil  -- eventId of close action registered in RI_PHONE_UI context
 RoleplayPhone.currentTab          = RoleplayPhone.TAB.INBOX
-RoleplayPhone.settingsTab         = "general"   -- "general" | "wallpaper"
+RoleplayPhone.settingsTab = "general"   -- "general" | "ringtones" | "wallpaper"
+
+-- ─── Ringtone definitions ─────────────────────────────────────────────────────
+RoleplayPhone.RINGTONES = {
+    { name = "Classic",   file = "ringtone.ogg"         },
+    { name = "Farm",      file = "ringtone_farm.ogg"    },
+    { name = "Tractor",   file = "ringtone_tractor.ogg" },
+    { name = "Old Phone", file = "ringtone_oldphone.ogg"},
+}
 RoleplayPhone.previewWallpaper    = nil          -- index being previewed, nil = use current
 RoleplayPhone.mouseX         = 0
 RoleplayPhone.mouseY         = 0
@@ -50,8 +58,10 @@ RoleplayPhone.iconSettings              = nil
 RoleplayPhone.callActionEventId         = nil
 RoleplayPhone.incomingCallActionEventId = nil
 RoleplayPhone.backspaceEventId          = nil
-RoleplayPhone.callHistory               = {}  -- current session only, cleared on game restart
-RoleplayPhone.hitboxes       = {}   -- rebuilt every draw frame
+RoleplayPhone.seenInvoiceIds = {}  -- tracks which pending invoices the player has seen
+RoleplayPhone.callHistory    = {}  -- current session only, cleared on game restart
+RoleplayPhone.hitboxes       = {}  -- rebuilt every draw frame
+RoleplayPhone.onlineUsers    = {}  -- [playerUserId] = {farmId, name, phone} — populated by PlayerHello
 
 -- ─── Aspect ratio correction ──────────────────────────────────────────────────
 -- FS25 normalised coords: 0-1 on both axes. On ultrawide, same x-range covers
@@ -88,6 +98,7 @@ RoleplayPhone.settings = {
     tempUnit       = "F",    -- "F" or "C"
     wallpaperIndex = 1,      -- 1-6 colour swatch
     batteryVisible = true,   -- show battery widget in status bar
+    ringtoneIndex  = 1,      -- 1-4 ringtone selection
 }
 
 -- ─── Battery widget (cosmetic, purely visual) ─────────────────────────────────
@@ -118,10 +129,10 @@ RoleplayPhone.WALLPAPERS = {
 
 -- Create invoice form state
 RoleplayPhone.form = {
-    toFarmIndex   = 1,      -- index into available farms list
-    categoryIndex = 1,      -- index into InvoiceManager.categories
+    toFarmIndex        = 1,      -- index into available farms list
+    categoryGroupIndex = 1,      -- index into InvoiceManager.categoryGroups
+    categoryTypeIndex  = 1,      -- index into current group's types
     amount        = "",
-    description   = "",
     notes         = "",
     dueDate       = "",
     activeField   = nil,    -- "amount" | "description" | "notes" | "dueDate"
@@ -130,7 +141,7 @@ RoleplayPhone.form = {
 RoleplayPhone.selectedContact = nil   -- index into ContactManager.contacts
 
 -- ─── Message storage & compose ────────────────────────────────────────────────
--- messages[contactIndex] = { { fromFarmId, senderName, text, gameDay, sent }, ... }
+-- messages[contactIndex] = { { fromUserId, senderName, text, gameDay, sent }, ... }
 RoleplayPhone.messages       = {}
 RoleplayPhone.messageCompose = { text = "", active = false }
 RoleplayPhone.unreadMessages = {}  -- unreadMessages[contactIndex] = count
@@ -139,19 +150,20 @@ RoleplayPhone.unreadMessages = {}  -- unreadMessages[contactIndex] = count
 RoleplayPhone.call = {
     contactName  = "",    -- display name of the other party
     contactNum   = "",    -- their phone number
-    toFarmId     = 0,     -- farmId of the other party
-    fromFarmId   = 0,     -- farmId of caller (for incoming)
+    toUserId     = 0,     -- playerUserId of the other party
+    fromUserId   = 0,     -- playerUserId of caller (for incoming)
     startTime    = 0,     -- g_currentMission.time when call connected
     ringSample   = nil,   -- sound handle
     prevState    = 7,     -- STATE to return to after call (default CONTACT_DETAIL)
 }
 
 RoleplayPhone.contactForm = {
-    name        = "",
-    farmName    = "",
-    phone       = "",
-    notes       = "",
-    activeField = nil,  -- "name" | "farmName" | "phone" | "notes"
+    name         = "",
+    farmName     = "",
+    phone        = "",
+    notes        = "",
+    playerUserId = 0,
+    activeField  = nil,  -- "name" | "farmName" | "phone" | "notes"
 }
 
 
@@ -223,18 +235,50 @@ function RoleplayPhone:init()
         self.wallpaper = nil
     end
 
-    -- Load ring tone (optional — won't error if missing)
-    local soundFile = modDirectory .. "sounds/ringtone.ogg"
-    self.ringSample = createSample("RP_ringtone")
-    if self.ringSample and self.ringSample ~= 0 then
-        loadSample(self.ringSample, soundFile, false)  -- false = not 3D positional
-        print("[RoleplayPhone] Ringtone loaded OK")
+    -- Load all ringtone samples
+    self.ringtoneSamples = {}
+    for i, rt in ipairs(self.RINGTONES) do
+        local snd = createSample("RP_ringtone_" .. i)
+        if snd and snd ~= 0 then
+            loadSample(snd, modDirectory .. "sounds/" .. rt.file, false)
+            self.ringtoneSamples[i] = snd
+        end
+    end
+    -- Keep self.ringSample pointing to the selected one for compatibility
+    self.ringSample = self.ringtoneSamples[self.settings.ringtoneIndex or 1]
+    print("[RoleplayPhone] Ringtones loaded: " .. #self.ringtoneSamples)
+
+    -- Load ringback tone (what the caller hears while waiting)
+    local ringbackFile = modDirectory .. "sounds/ringback.ogg"
+    self.ringbackSample = createSample("RP_ringback")
+    if self.ringbackSample and self.ringbackSample ~= 0 then
+        loadSample(self.ringbackSample, ringbackFile, false)
+        print("[RoleplayPhone] Ringback loaded OK")
     else
-        self.ringSample = nil
-        print("[RoleplayPhone] WARN: ringtone.ogg not found - calls will be silent")
+        self.ringbackSample = nil
+        print("[RoleplayPhone] WARN: ringback.ogg not found - caller will hear silence")
     end
 
-    -- ─── Aspect ratio detection ──────────────────────────────────────────────
+    -- Load unavailable tone (plays when called player is not online)
+    local unavailableFile = modDirectory .. "sounds/unavailable.ogg"
+    self.unavailableSample = createSample("RP_unavailable")
+    if self.unavailableSample and self.unavailableSample ~= 0 then
+        loadSample(self.unavailableSample, unavailableFile, false)
+        print("[RoleplayPhone] Unavailable tone loaded OK")
+    else
+        self.unavailableSample = nil
+    end
+
+    -- Load notification sound (messages and invoices)
+    local notifFile = modDirectory .. "sounds/notification.ogg"
+    self.notifSample = createSample("RP_notification")
+    if self.notifSample and self.notifSample ~= 0 then
+        loadSample(self.notifSample, notifFile, false)
+        print("[RoleplayPhone] Notification sound loaded OK")
+    else
+        self.notifSample = nil
+    end
+
     -- g_screenWidth / g_screenHeight are FS25 globals, available after engine init.
     -- Reference aspect ratio is 16:9 — all layout constants were authored for it.
     local sw = g_screenWidth  or 1920
@@ -276,12 +320,12 @@ function RoleplayPhone:loadSavedData()
         print("[RoleplayPhone] No saved invoices found (new save or first run)")
     end
 
-    -- Sync host's own contacts into farmContacts so they're available for connect sync
-    local hostFarmId = self:getMyFarmId()
-    if hostFarmId and hostFarmId > 0 then
-        ContactManager.farmContacts[hostFarmId] = ContactManager.contacts
-        print(string.format("[RoleplayPhone] Bootstrapped farmContacts[%d] with %d contacts",
-            hostFarmId, #ContactManager.contacts))
+    -- Sync host's own contacts into userContacts keyed by host's playerUserId
+    local hostUserId = self:getMyUserId()
+    if hostUserId and hostUserId ~= 0 then
+        ContactManager.userContacts[hostUserId] = ContactManager.contacts
+        print(string.format("[RoleplayPhone] Bootstrapped userContacts[%d] with %d contacts",
+            hostUserId, #ContactManager.contacts))
     end
 end
 
@@ -341,8 +385,8 @@ function RoleplayPhone:toggle()
             end
             if unpaid > 0 then
                 local msg = unpaid == 1
-                    and "You have 1 unpaid invoice."
-                    or  string.format("You have %d unpaid invoices.", unpaid)
+                    and g_i18n:getText("phone_notif_unpaid_one")
+                    or  string.format(g_i18n:getText("phone_notif_unpaid_multi"), unpaid)
                 NotificationManager:push("info", msg)
             end
         end
@@ -382,12 +426,12 @@ function RoleplayPhone:goHome()
 end
 
 -- ─── Store an incoming message in the right thread ────────────────────────────
-function RoleplayPhone:receiveMessage(contactKey, fromFarmId, senderName, text, gameDay, sent)
+function RoleplayPhone:receiveMessage(contactKey, fromUserId, senderName, text, gameDay, sent)
     if not self.messages[contactKey] then
         self.messages[contactKey] = {}
     end
     table.insert(self.messages[contactKey], {
-        fromFarmId  = fromFarmId,
+        fromUserId  = fromUserId,
         senderName  = senderName,
         text        = text,
         gameDay     = gameDay or 0,
@@ -407,8 +451,11 @@ function RoleplayPhone:receiveMessage(contactKey, fromFarmId, senderName, text, 
             end
         end
         self.unreadMessages[contactKey] = (self.unreadMessages[contactKey] or 0) + 1
+        if self.notifSample and self.notifSample ~= 0 then
+            playSample(self.notifSample, 1, 1.0, 1.0, 0, 0)
+        end
         NotificationManager:push("ping",
-            string.format("MSG from %s: %s", displayName, text))
+            string.format(g_i18n:getText("phone_notif_msg_from"), displayName, text))
     end
 end
 
@@ -421,24 +468,23 @@ function RoleplayPhone:sendMessage()
     local c = ContactManager:getContact(self.selectedContact)
     if not c then return end
 
-    -- Resolve recipient farmId
-    local toFarmId = self:resolveFarmId(c.farmName)
-    if toFarmId == 0 then
+    local toUserId = self:resolveUserId(c)
+    if toUserId == 0 then
         NotificationManager:push("rejected",
-            string.format("Can't find farm '%s' online.", c.farmName or "?"))
+            string.format(g_i18n:getText("phone_notif_farm_not_found"), c.name or c.farmName or "?"))
         return
     end
 
-    local myFarmId = self:getMyFarmId()
-    local myName   = self:getFarmName(myFarmId)
-    local gameDay   = (g_currentMission and g_currentMission.environment
-                       and g_currentMission.environment.currentDay) or 0
+    local myUserId = self:getMyUserId()
+    local myName   = self:getFarmName(self:getMyFarmId())
+    local gameDay  = (g_currentMission and g_currentMission.environment
+                      and g_currentMission.environment.currentDay) or 0
 
     -- Store locally as a sent message
-    self:receiveMessage(self.selectedContact, myFarmId, myName, text, gameDay, true)
+    self:receiveMessage(self.selectedContact, myUserId, myName, text, gameDay, true)
 
     -- Broadcast over network
-    local evt = RI_MessageEvent.new(myFarmId, toFarmId, myName, text, gameDay)
+    local evt = RI_MessageEvent.new(myUserId, toUserId, myName, text, gameDay)
     if g_server ~= nil then
         g_server:broadcastEvent(evt)
     elseif g_client ~= nil then
@@ -447,8 +493,8 @@ function RoleplayPhone:sendMessage()
 
     -- Clear compose
     self.messageCompose.text = ""
-    print(string.format("[RoleplayPhone] Message sent to Farm %d (%s): %s",
-        toFarmId, c.farmName, text))
+    print(string.format("[RoleplayPhone] Message sent to userId %d (%s): %s",
+        toUserId, c.name or "?", text))
 end
 
 -- ─── Farm lookup helpers (use g_farmManager directly — reliable on host AND client) ──
@@ -459,29 +505,40 @@ function RoleplayPhone:startCall()
     local c = ContactManager:getContact(self.selectedContact)
     if not c then return end
 
-    local toFarmId = self:resolveFarmId(c.farmName)
-    if toFarmId == 0 then
+    local toUserId = self:resolveUserId(c)
+    if toUserId == 0 then
+        if self.unavailableSample and self.unavailableSample ~= 0 then
+            playSample(self.unavailableSample, 1, 1.0, 1.0, 0, 0)
+        end
         NotificationManager:push("rejected",
-            string.format("Can't reach '%s' - are they online?", c.farmName or "?"))
+            string.format(g_i18n:getText("phone_notif_cant_reach"), c.name or c.farmName or "?"))
         return
     end
 
-    local myFarmId = self:getMyFarmId()
-    local myName   = self:getFarmName(myFarmId)
+    -- Online check — only on host where onlineUsers is authoritative
+    if g_server ~= nil and not self:isUserOnline(toUserId) then
+        if self.unavailableSample and self.unavailableSample ~= 0 then
+            playSample(self.unavailableSample, 1, 1.0, 1.0, 0, 0)
+        end
+        NotificationManager:push("rejected",
+            string.format(g_i18n:getText("phone_notif_cant_reach"), c.name or c.farmName or "?"))
+        return
+    end
+
+    local myUserId = self:getMyUserId()
+    local myName   = self:getFarmName(self:getMyFarmId())
 
     self.call.contactName = c.name or c.farmName
     self.call.contactNum  = c.phone or ""
-    self.call.toFarmId    = toFarmId
-    self.call.fromFarmId  = myFarmId
+    self.call.toUserId    = toUserId
+    self.call.fromUserId  = myUserId
     self.call.startTime   = 0
     self.call.prevState   = self.STATE.CLOSED
     self.state = self.STATE.CALL_OUTGOING
     self.callRingTimer    = 0
-    -- Record outgoing call
     table.insert(self.callHistory, 1, { direction="outgoing", name=self.call.contactName, gameTime=g_currentMission and g_currentMission.time or 0 })
 
-    -- Close the phone UI context so player keeps full movement during call
-    -- The call popup draws independently above the CLOSED guard in draw()
+    -- Close phone UI so player keeps full movement during call
     self.isOpen = false
     g_inputBinding:setShowMouseCursor(false)
     if self.phoneContextEventId then
@@ -490,35 +547,39 @@ function RoleplayPhone:startCall()
     end
     g_inputBinding:revertContext(true)
 
-    local evt = RI_CallEvent.new("ring", myFarmId, toFarmId, myName, "")
+    local evt = RI_CallEvent.new("ring", myUserId, toUserId, myName, "")
     if g_server ~= nil then g_server:broadcastEvent(evt)
     elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
-    print(string.format("[RoleplayPhone] Calling Farm %d (%s)...", toFarmId, c.farmName))
+    -- Play ringback tone for the caller while waiting
+    if self.ringbackSample and self.ringbackSample ~= 0 then
+        playSample(self.ringbackSample, 0, 1.0, 1.0, 0, 0)
+    end
+    print(string.format("[RoleplayPhone] Calling userId %d (%s)...", toUserId, c.name or "?"))
 end
 
 -- ─── CALL: incoming ──────────────────────────────────────────────────────────
-function RoleplayPhone:onIncomingCall(fromFarmId, callerName, callerNum)
+function RoleplayPhone:onIncomingCall(fromUserId, callerName, callerNum)
     if self.state == self.STATE.CALL_OUTGOING
     or self.state == self.STATE.CALL_INCOMING
     or self.state == self.STATE.CALL_ACTIVE then
-        local myFarmId = self:getMyFarmId()
-        local evt = RI_CallEvent.new("decline", myFarmId, fromFarmId, "", "")
+        local myUserId = self:getMyUserId()
+        local evt = RI_CallEvent.new("decline", myUserId, fromUserId, "", "")
         if g_server ~= nil then g_server:broadcastEvent(evt)
         elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
         return
     end
-    -- Try to find caller in our contacts by farm name for a friendlier display name
+    -- Try to find caller in contacts by playerUserId for a friendlier display name
     local displayName = callerName
     for _, c in ipairs(ContactManager.contacts) do
-        if c.farmName and string.lower(c.farmName) == string.lower(callerName) then
+        if c.playerUserId and c.playerUserId == fromUserId then
             displayName = c.name or callerName
             break
         end
     end
     self.call.contactName = displayName
     self.call.contactNum  = callerNum
-    self.call.fromFarmId  = fromFarmId
-    self.call.toFarmId    = self:getMyFarmId()
+    self.call.fromUserId  = fromUserId
+    self.call.toUserId    = self:getMyUserId()
     self.call.startTime   = 0
     self.call.prevState   = self.state
     self.state = self.STATE.CALL_INCOMING
@@ -526,8 +587,6 @@ function RoleplayPhone:onIncomingCall(fromFarmId, callerName, callerNum)
     -- Record incoming call
     table.insert(self.callHistory, 1, { direction="incoming", name=self.call.contactName, gameTime=g_currentMission and g_currentMission.time or 0 })
 
-    -- Popup draws independently, no context push needed — player keeps full movement
-    -- Don't set isOpen so _restoreAfterCall won't try to revertContext
     if self.ringSample and self.ringSample ~= 0 then
         playSample(self.ringSample, 0, 1.0, 0, 0, 0)
     end
@@ -542,7 +601,7 @@ end
 
 function RoleplayPhone:onCallDeclined()
     self:stopRingtone()
-    NotificationManager:push("rejected", "Call declined.")
+    NotificationManager:push("rejected", g_i18n:getText("phone_notif_call_declined"))
     self:_restoreAfterCall()
 end
 
@@ -550,8 +609,8 @@ function RoleplayPhone:onCallEnded()
     self:stopRingtone()
     -- If we were still ringing when the other side ended it, that's a missed call
     if self.state == self.STATE.CALL_INCOMING then
-        local name = self.call.contactName or "Unknown"
-        NotificationManager:push("info", string.format("Missed call from %s", name))
+        local name = self.call.contactName or g_i18n:getText("phone_unknown_contact")
+        NotificationManager:push("info", string.format(g_i18n:getText("phone_notif_missed_call"), name))
         -- Record missed call
         table.insert(self.callHistory, 1, { direction="missed", name=name, gameTime=g_currentMission and g_currentMission.time or 0 })
     end
@@ -562,7 +621,7 @@ end
 function RoleplayPhone:_restoreAfterCall()
     local prevState = self.call.prevState or self.STATE.HOME
     self:stopRingtone()
-    self.call = { prevState = self.STATE.HOME, startTime = 0, fromFarmId = 0, toFarmId = 0, contactName = "", contactNum = "" }
+    self.call = { prevState = self.STATE.HOME, startTime = 0, fromUserId = 0, toUserId = 0, contactName = "", contactNum = "" }
     if prevState == self.STATE.CLOSED or not self.isOpen then
         -- If isOpen is already false, context was cleaned up by startCall — don't revert again
         if self.isOpen then
@@ -588,20 +647,19 @@ function RoleplayPhone:answerCall()
     self:stopRingtone()
     self.call.startTime = g_currentMission and g_currentMission.time or 0
     self.state = self.STATE.CALL_ACTIVE
-    local myFarmId = self:getMyFarmId()
-    local evt = RI_CallEvent.new("answer", myFarmId, self.call.fromFarmId, "", "")
+    local myUserId = self:getMyUserId()
+    local evt = RI_CallEvent.new("answer", myUserId, self.call.fromUserId, "", "")
     if g_server ~= nil then g_server:broadcastEvent(evt)
     elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
 end
 
 function RoleplayPhone:endCall()
     self:stopRingtone()
-    local myFarmId = self:getMyFarmId()
-    local remoteFarm = (self.call.fromFarmId == myFarmId)
-                       and self.call.toFarmId or self.call.fromFarmId
-    -- Send "decline" if still ringing, "end" if call was active
+    local myUserId    = self:getMyUserId()
+    local remoteUser  = (self.call.fromUserId == myUserId)
+                        and self.call.toUserId or self.call.fromUserId
     local evtType = (self.state == self.STATE.CALL_INCOMING) and "decline" or "end"
-    local evt = RI_CallEvent.new(evtType, myFarmId, remoteFarm, "", "")
+    local evt = RI_CallEvent.new(evtType, myUserId, remoteUser, "", "")
     if g_server ~= nil then g_server:broadcastEvent(evt)
     elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
     self:_restoreAfterCall()
@@ -610,6 +668,12 @@ end
 function RoleplayPhone:stopRingtone()
     if self.ringSample and self.ringSample ~= 0 then
         stopSample(self.ringSample, 0, 0)
+    end
+    if self.ringbackSample and self.ringbackSample ~= 0 then
+        stopSample(self.ringbackSample, 0, 0)
+    end
+    if self.unavailableSample and self.unavailableSample ~= 0 then
+        stopSample(self.unavailableSample, 0, 0)
     end
 end
 
@@ -651,6 +715,50 @@ function RoleplayPhone:getMyFarmId()
     self.cachedFarmId = farmId
     self.cachedFarmIdTime = now
     return farmId
+end
+
+-- ─── Player identity helpers ──────────────────────────────────────────────────
+
+function RoleplayPhone:getMyUserId()
+    if g_currentMission and g_currentMission.playerUserId then
+        return g_currentMission.playerUserId
+    end
+    return 0
+end
+
+-- Deterministic phone number from playerUserId — same player always gets same number
+function RoleplayPhone:hashPhone(userId)
+    if not userId or userId == 0 then return "555-0000" end
+    local n = ((userId * 2654435761) % 9000) + 1000  -- 4-digit suffix 1000-9999
+    return string.format("555-%04d", n)
+end
+
+-- Resolve a contact's playerUserId for call/message routing
+-- Returns 0 if contact has no userId or is not online
+function RoleplayPhone:resolveUserId(contact)
+    if not contact then return 0 end
+    -- Direct userId stored on contact
+    if contact.playerUserId and contact.playerUserId ~= 0 then
+        return contact.playerUserId
+    end
+    -- Fallback: look up by name in onlineUsers
+    if contact.name and contact.name ~= "" then
+        local lower = string.lower(contact.name)
+        for uid, info in pairs(self.onlineUsers) do
+            if info.name and string.lower(info.name) == lower then
+                return uid
+            end
+        end
+    end
+    return 0
+end
+
+-- Check if a playerUserId is currently online
+function RoleplayPhone:isUserOnline(userId)
+    if not userId or userId == 0 then return false end
+    -- Our own userId is always "online"
+    if userId == self:getMyUserId() then return true end
+    return self.onlineUsers[userId] ~= nil
 end
 
 -- ─── Save invoices directly (no longer depends on g_roleplayInvoices) ────────
@@ -713,15 +821,18 @@ function RoleplayPhone:updateCallTimeout(dt)
     self.callRingTimer = (self.callRingTimer or 0) + dt
     if self.callRingTimer >= 30000 then  -- 30 seconds in ms
         self.callRingTimer = 0
-        local myFarmId = self:getMyFarmId()
+        local myUserId = self:getMyUserId()
         -- Send end event to the other side
-        local evt = RI_CallEvent.new("end", myFarmId, self.call.toFarmId or self.call.fromFarmId, "", "")
+        local remoteUser = (self.call.fromUserId == myUserId)
+                           and self.call.toUserId or self.call.fromUserId
+        local evt = RI_CallEvent.new("end", myUserId, remoteUser, "", "")
         if g_server ~= nil then g_server:broadcastEvent(evt)
         elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
-        -- Show missed call notification for incoming side
+        -- Show missed call notification and record for incoming side
         if self.state == self.STATE.CALL_INCOMING then
-            local name = self.call.contactName or "Unknown"
-            NotificationManager:push("info", string.format("Missed call from %s", name))
+            local name = self.call.contactName or g_i18n:getText("phone_unknown_contact")
+            NotificationManager:push("info", string.format(g_i18n:getText("phone_notif_missed_call"), name))
+            table.insert(self.callHistory, 1, { direction="missed", name=name, gameTime=g_currentMission and g_currentMission.time or 0 })
         end
         self:_restoreAfterCall()
     end
@@ -761,9 +872,14 @@ function RoleplayPhone:drawField(id, x, y, w, h, label, value, active)
     setTextBold(false)
     setTextColor(0.6, 0.7, 0.8, 0.9)
     renderText(x + 0.008, y + h - 0.016, 0.010, label)
-    -- Value (with cursor if active)
+    -- Value (with cursor if active) — truncate only if genuinely too long
     local display = value
     if active then display = value .. "|" end
+    -- Only truncate past ~50 chars — enough for any reasonable note
+    local maxChars = math.floor((w - 0.016) / (0.013 * 0.28))
+    if #display > maxChars then
+        display = display:sub(1, maxChars - 2) .. ".."
+    end
     setTextColor(1, 1, 1, 1)
     renderText(x + 0.008, y + 0.008, 0.013, display)
     -- Register hitbox
@@ -786,7 +902,6 @@ end
 function RoleplayPhone:resolveFarmId(farmName)
     if not farmName or farmName == "" then return 0 end
     local lower = string.lower(farmName)
-    -- g_farmManager is the correct global — g_currentMission.farmManager is often nil
     if g_farmManager then
         for _, farm in pairs(g_farmManager:getFarms()) do
             if farm.name and string.lower(farm.name) == lower then
@@ -1234,7 +1349,7 @@ function RoleplayPhone:drawStatusBar(px, py, pw, ph)
 
     -- Right side: 4G, signal bars, battery — tight group from right edge
     setTextAlignment(RenderText.ALIGN_RIGHT)
-    renderText(px + pw - 0.042 * self.arScale, barY, textSize, "4G")
+    renderText(px + pw - 0.042 * self.arScale, barY, textSize, g_i18n:getText("phone_status_4g"))
     renderText(px + pw - 0.060 * self.arScale, barY, textSize, "|||")
 
     -- Battery widget: sits at far right, next to signal bars
@@ -1267,7 +1382,7 @@ function RoleplayPhone:drawStatusBar(px, py, pw, ph)
                 setTextAlignment(RenderText.ALIGN_RIGHT)
                 setTextBold(false)
                 setTextColor(0.95, 0.15, 0.15, 1.0)
-                renderText(bx - 0.003 * self.arScale, barY, 0.009, "LOW")
+                renderText(bx - 0.003 * self.arScale, barY, 0.009, g_i18n:getText("phone_battery_low"))
             end
         end
     end
@@ -1377,14 +1492,14 @@ function RoleplayPhone:drawPhoneHome()
     if self.homePageCount > 1 then
         setTextAlignment(RenderText.ALIGN_LEFT)
         setTextColor(0.85, 0.87, 0.90, 0.75)
-        renderText(px + 0.006, dockY + dockH - 0.008, 0.008, "Click outside to close")
+        renderText(px + 0.006, dockY + dockH - 0.008, 0.008, g_i18n:getText("phone_hint_close"))
         setTextAlignment(RenderText.ALIGN_RIGHT)
         setTextColor(0.65, 0.70, 0.80, 0.70)
-        renderText(px + pw - 0.006, dockY + dockH - 0.008, 0.008, "< > switch pages")
+        renderText(px + pw - 0.006, dockY + dockH - 0.008, 0.008, g_i18n:getText("phone_hint_switch_pages"))
     else
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextColor(0.85, 0.87, 0.90, 0.75)
-        renderText(cx, dockY + dockH - 0.008, 0.008, "Click outside to close")
+        renderText(cx, dockY + dockH - 0.008, 0.008, g_i18n:getText("phone_hint_close"))
     end
 
     -- Frame texture used to be drawn here, now drawn in main draw() for all screens
@@ -1425,7 +1540,8 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
 
     -- Get weather data
     local tempStr    = "--°"
-    local condStr    = "Clear"
+    local condStr    = g_i18n:getText("weather_cond_clear")
+    local condKey    = "Clear"
     local condColor  = { 1.0, 0.85, 0.30 }
 
     if g_currentMission and g_currentMission.environment then
@@ -1437,17 +1553,26 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
             local isHailing = weather.getIsHailing and weather:getIsHailing() or false
 
             if isHailing then
-                condStr   = "Hail"
+                condStr   = g_i18n:getText("weather_cond_hail")
+                condKey   = "Hail"
                 condColor = { 0.60, 0.80, 0.95 }
             elseif isSnowing then
-                condStr   = "Snow"
+                condStr   = g_i18n:getText("weather_cond_snow")
+                condKey   = "Snow"
                 condColor = { 0.85, 0.92, 1.00 }
             elseif isRaining then
                 local intensity = weather.getRainFallScale and weather:getRainFallScale() or 1
-                condStr   = intensity > 0.6 and "Heavy Rain" or "Rain"
+                if intensity > 0.6 then
+                    condStr = g_i18n:getText("weather_cond_heavy_rain")
+                    condKey = "HeavyRain"
+                else
+                    condStr = g_i18n:getText("weather_cond_rain")
+                    condKey = "Rain"
+                end
                 condColor = { 0.45, 0.65, 0.90 }
             else
-                condStr   = "Clear"
+                condStr   = g_i18n:getText("weather_cond_clear")
+                condKey   = "Clear"
                 condColor = { 1.0, 0.85, 0.30 }
             end
 
@@ -1466,15 +1591,6 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
         end
     end
 
-    -- Map condStr to icon key
-    local condKey = "Clear"
-    if     condStr == "Hail"       then condKey = "Hail"
-    elseif condStr == "Snow"       then condKey = "Snow"
-    elseif condStr == "Heavy Rain" then condKey = "HeavyRain"
-    elseif condStr == "Rain"       then condKey = "Rain"
-    else                                condKey = "Clear"
-    end
-
     -- City / map name
     local cityStr = ""
     if g_currentMission and g_currentMission.missionInfo then
@@ -1482,25 +1598,20 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
     end
 
     -- Layout: centered stack — icon, temp, condition, city
-    local iconSz  = 0.065 * self.arScale
-    local iconH   = iconSz * self.actualAR
-    local iconX   = cx - iconSz / 2                 -- centered
-    local iconTopY = py + ph * 0.62                 -- upper-center of the content area
+    local iconSz   = 0.048 * self.arScale
+    local iconH    = iconSz * self.actualAR
+    local iconX    = cx - iconSz / 2
+    local iconTopY = py + ph * 0.62     -- top edge of icon
 
+    -- Dark backdrop — covers icon + all text below it
+    local bgW  = pw * 0.58
+    local bgX  = cx - bgW / 2
+    local bgTopY = iconTopY             -- top of backdrop aligns with top of icon
+    local bgH    = iconH + 0.078        -- icon height + room for all text below
+    self:drawRect(bgX, bgTopY - bgH + iconH, bgW, bgH, 0.0, 0.0, 0.0, 0.38)
+
+    -- Icon drawn on top of backdrop
     local condIcon = self.weatherIcons and self.weatherIcons[condKey]
-    if condIcon and condIcon ~= 0 then
-        setOverlayColor(condIcon, 1, 1, 1, 0.95)
-        renderOverlay(condIcon, iconX, iconTopY, iconSz, iconH)
-    end
-
-    -- Dark backdrop behind the entire widget (icon + all text)
-    local bgW = pw * 0.58
-    local bgH = iconH + 0.075           -- icon height + room for all text below
-    local bgX = cx - bgW / 2
-    local bgY = iconTopY - 0.090        -- bottom edge (below city text)
-    self:drawRect(bgX, bgY, bgW, bgH, 0.0, 0.0, 0.0, 0.38)
-
-    -- Icon (drawn on top of backdrop)
     if condIcon and condIcon ~= 0 then
         setOverlayColor(condIcon, 1, 1, 1, 0.95)
         renderOverlay(condIcon, iconX, iconTopY, iconSz, iconH)
@@ -1511,7 +1622,7 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
     -- Temperature
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(cx, iconTopY - 0.022, 0.036, tempStr)
+    renderText(cx, iconTopY - 0.030, 0.036, tempStr)
 
     -- Condition label
     setTextBold(false)
@@ -1521,7 +1632,7 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
     -- City / map name
     if cityStr ~= "" then
         setTextColor(0.85, 0.90, 1.0, 0.90)
-        renderText(cx, iconTopY - 0.076, 0.011, "@ " .. cityStr)
+        renderText(cx, iconTopY - 0.076, 0.011, string.format(g_i18n:getText("phone_weather_location_fmt"), cityStr))
     end
 
     setTextBold(false)
@@ -1575,7 +1686,7 @@ function RoleplayPhone:drawAppGrid(px, py, pw, ph, dockY, dockH)
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextBold(false)
         setTextColor(1, 1, 1, 0.90)
-        renderText(ix + iconSz/2, iy - 0.014, 0.009, app.label)
+        renderText(ix + iconSz/2, iy - 0.014, 0.009, g_i18n:getText("app_label_" .. app.id))
 
         -- Hitbox
         self:addHitbox("grid_app_" .. app.id, ix, iy - 0.016, iconSz, iconH + 0.016, { appId = app.id })
@@ -1583,6 +1694,33 @@ function RoleplayPhone:drawAppGrid(px, py, pw, ph, dockY, dockH)
 end
 
 -- ─── Dock icons (always visible) ─────────────────────────────────────────────
+function RoleplayPhone:getAppBadgeCount(appId)
+    local myFarmId = self:getMyFarmId()
+    if appId == "invoices" then
+        local count = 0
+        local invoices = InvoiceManager:getInvoicesForFarm(myFarmId, true)
+        for _, inv in ipairs(invoices) do
+            if inv.status == "PENDING" and not self.seenInvoiceIds[inv.id] then
+                count = count + 1
+            end
+        end
+        return count
+    elseif appId == "calls" then
+        local count = 0
+        for _, entry in ipairs(self.callHistory) do
+            if entry.direction == "missed" then count = count + 1 end
+        end
+        return count
+    elseif appId == "contacts" then
+        local count = 0
+        for _, n in pairs(self.unreadMessages) do
+            count = count + (n or 0)
+        end
+        return count
+    end
+    return 0
+end
+
 function RoleplayPhone:drawDockIcons(px, py, pw, ph, dockY, dockH)
     local cx     = px + pw / 2
     local nApps  = #self.DOCK_APPS
@@ -1623,11 +1761,27 @@ function RoleplayPhone:drawDockIcons(px, py, pw, ph, dockY, dockH)
             renderOverlay(self.iconSettings, ix + sm, iconY + hm, iconSz - sm*2, iconH - hm*2)
         end
 
+        -- Badge
+        local badge = self:getAppBadgeCount(app.id)
+        if badge > 0 then
+            local badgeStr = badge > 99 and "99+" or tostring(badge)
+            local bsz  = 0.018 * self.arScale
+            local bszH = bsz * self.actualAR * 0.75  -- slightly shorter than wide = pill-ish
+            local bx   = ix + iconSz - bsz * 0.7
+            local by   = iconY + iconH - bszH * 0.1
+            self:drawRect(bx, by, bsz, bszH, 0.90, 0.15, 0.15, 1.0)
+            setTextAlignment(RenderText.ALIGN_CENTER)
+            setTextBold(true)
+            setTextColor(1, 1, 1, 1)
+            renderText(bx + bsz/2, by + bszH * 0.18, 0.010, badgeStr)
+            setTextBold(false)
+        end
+
         -- Label below icon (inside dock)
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextBold(false)
         setTextColor(0.85, 0.87, 0.90, 0.85)
-        renderText(ix + iconSz/2, dockY + 0.004, 0.008, app.label)
+        renderText(ix + iconSz/2, dockY + 0.004, 0.008, g_i18n:getText("app_label_" .. app.id))
 
         -- Hitbox
         self:addHitbox("dock_" .. app.id, ix, dockY, iconSz, dockH, { appId = app.id })
@@ -1653,6 +1807,7 @@ function RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
         if handled then return end
     end
 
+    -- Scroll wheel on create invoice form
     if not isDown or button ~= Input.MOUSE_BUTTON_LEFT then return end
 
     -- Check hitboxes
@@ -1691,9 +1846,29 @@ function RoleplayPhone:onHitboxClicked(hb)
     -- Dock app clicks
     if hb.id:sub(1,5) == "dock_" and hb.data and hb.data.appId then
         local appId = hb.data.appId
-        if appId == "invoices" then self.state = self.STATE.INVOICES_LIST; return end
+        if appId == "invoices" then
+            self.state = self.STATE.INVOICES_LIST
+            -- Mark all current pending inbox invoices as seen so badge clears
+            local myFarmId = self:getMyFarmId()
+            local invoices = InvoiceManager:getInvoicesForFarm(myFarmId, true)
+            for _, inv in ipairs(invoices) do
+                if inv.status == "PENDING" then
+                    self.seenInvoiceIds[inv.id] = true
+                end
+            end
+            return
+        end
         if appId == "contacts" then self.state = self.STATE.CONTACTS;      return end
-        if appId == "calls"    then self.state = self.STATE.CALLS;          return end
+        if appId == "calls"    then
+            self.state = self.STATE.CALLS
+            -- Clear missed call badge when player opens the calls screen
+            for i = #self.callHistory, 1, -1 do
+                if self.callHistory[i].direction == "missed" then
+                    self.callHistory[i].direction = "missed_seen"
+                end
+            end
+            return
+        end
         if appId == "settings" then self.state = self.STATE.SETTINGS;      return end
         return
     end
@@ -1807,21 +1982,35 @@ function RoleplayPhone:onHitboxClicked(hb)
         return
     end
 
-    -- Category selector arrows
-    if hb.id == "cat_prev" then
-        local n = #InvoiceManager.categories
-        self.form.categoryIndex = ((self.form.categoryIndex - 2) % n) + 1
+    -- Category group arrows
+    if hb.id == "cat_group_prev" then
+        local n = #InvoiceManager.categoryGroups
+        self.form.categoryGroupIndex = ((self.form.categoryGroupIndex - 2) % n) + 1
+        self.form.categoryTypeIndex  = 1
         return
     end
-    if hb.id == "cat_next" then
-        local n = #InvoiceManager.categories
-        self.form.categoryIndex = (self.form.categoryIndex % n) + 1
+    if hb.id == "cat_group_next" then
+        local n = #InvoiceManager.categoryGroups
+        self.form.categoryGroupIndex = (self.form.categoryGroupIndex % n) + 1
+        self.form.categoryTypeIndex  = 1
+        return
+    end
+    -- Category type arrows
+    if hb.id == "cat_type_prev" then
+        local group = InvoiceManager.categoryGroups[self.form.categoryGroupIndex] or InvoiceManager.categoryGroups[1]
+        local n = #group.types
+        self.form.categoryTypeIndex = ((self.form.categoryTypeIndex - 2) % n) + 1
+        return
+    end
+    if hb.id == "cat_type_next" then
+        local group = InvoiceManager.categoryGroups[self.form.categoryGroupIndex] or InvoiceManager.categoryGroups[1]
+        local n = #group.types
+        self.form.categoryTypeIndex = (self.form.categoryTypeIndex % n) + 1
         return
     end
 
     -- Text fields - set active field
     if hb.id == "field_amount"      then self.form.activeField = "amount";      return end
-    if hb.id == "field_description" then self.form.activeField = "description"; return end
     if hb.id == "field_notes"       then self.form.activeField = "notes";       return end
     if hb.id == "field_dueDate"     then self.form.activeField = "dueDate";     return end
 
@@ -1867,7 +2056,7 @@ function RoleplayPhone:onHitboxClicked(hb)
             end
             RoleplayPhone:saveInvoices()
             UsedPlusCompat:onInvoiceRejected(inv)
-            NotificationManager:push("rejected", "Invoice #" .. string.format("%04d", inv.id) .. " rejected.")
+            NotificationManager:push("rejected", string.format(g_i18n:getText("phone_notif_invoice_rejected"), string.format("%04d", inv.id)))
             print("[RoleplayPhone] Invoice rejected: #" .. tostring(inv.id))
         end
         return
@@ -1900,12 +2089,12 @@ function RoleplayPhone:onHitboxClicked(hb)
                 RoleplayPhone:saveInvoices()
                 UsedPlusCompat:onInvoicePaid(inv)
                 NotificationManager:push("paid",
-                    string.format("Paid $%s to %s",
+                    string.format(g_i18n:getText("phone_notif_paid"),
                         self:formatMoney(amount),
                         self:getFarmName(inv.fromFarmId)))
                 print("[RoleplayPhone] Invoice paid: #" .. tostring(inv.id))
             else
-                NotificationManager:push("rejected", "Insufficient funds to pay this invoice.")
+                NotificationManager:push("rejected", g_i18n:getText("phone_notif_insufficient_funds"))
             end
         end
         return
@@ -1931,11 +2120,10 @@ function RoleplayPhone:onHitboxClicked(hb)
     if hb.id == "btn_delete_contact" then
         if self.selectedContact then
             local idx = self.selectedContact
-            -- If client, notify host to persist the deletion
             if g_server == nil then
-                local myFarmId = self:getMyFarmId()
+                local myUserId = self:getMyUserId()
                 g_client:getServerConnection():sendEvent(
-                    RI_ContactEvent.new("delete", myFarmId, idx, {}))
+                    RI_ContactEvent.new("delete", myUserId, idx, {}))
             end
             ContactManager:removeContact(idx)
             self.selectedContact = nil
@@ -1946,33 +2134,53 @@ function RoleplayPhone:onHitboxClicked(hb)
     end
 
     -- ── Contact create fields (focus) ──────────────────────────────────────
-    if hb.id == "cf_name"     then self.contactForm.activeField = "name";     return end
-    if hb.id == "cf_farmName" then self.contactForm.activeField = "farmName"; return end
-    if hb.id == "cf_phone"    then self.contactForm.activeField = "phone";    return end
-    if hb.id == "cf_notes"    then self.contactForm.activeField = "notes";    return end
+    if hb.id == "cf_name"  then self.contactForm.activeField = "name";  return end
+    if hb.id == "cf_notes" then self.contactForm.activeField = "notes"; return end
+
+    -- Online player picker arrows
+    if hb.id == "cf_player_prev" then
+        local myUserId = self:getMyUserId()
+        local count = 0
+        for uid, _ in pairs(self.onlineUsers) do
+            if uid ~= myUserId then count = count + 1 end
+        end
+        if count > 0 then
+            self.contactForm.playerPickerIdx = ((self.contactForm.playerPickerIdx or 1) - 2) % count + 1
+        end
+        return
+    end
+    if hb.id == "cf_player_next" then
+        local myUserId = self:getMyUserId()
+        local count = 0
+        for uid, _ in pairs(self.onlineUsers) do
+            if uid ~= myUserId then count = count + 1 end
+        end
+        if count > 0 then
+            self.contactForm.playerPickerIdx = ((self.contactForm.playerPickerIdx or 1) % count) + 1
+        end
+        return
+    end
 
     -- ── Contact create: clear buttons ──────────────────────────────────────
-    if hb.id == "cclear_name"     then self.contactForm.name     = ""; self.contactForm.activeField = "name";     return end
-    if hb.id == "cclear_farmName" then self.contactForm.farmName = ""; self.contactForm.activeField = "farmName"; return end
-    if hb.id == "cclear_phone"    then self.contactForm.phone    = ""; self.contactForm.activeField = "phone";    return end
-    if hb.id == "cclear_notes"    then self.contactForm.notes    = ""; self.contactForm.activeField = "notes";    return end
+    if hb.id == "cclear_name"  then self.contactForm.name  = ""; self.contactForm.activeField = "name";  return end
+    if hb.id == "cclear_notes" then self.contactForm.notes = ""; self.contactForm.activeField = "notes"; return end
 
     -- ── Contact create: save ───────────────────────────────────────────────
     if hb.id == "btn_save_contact" then
         local f = self.contactForm
         if f.name and f.name ~= "" then
             local data = {
-                name     = f.name,
-                farmName = f.farmName,
-                phone    = f.phone,
-                notes    = f.notes,
+                name         = f.name,
+                farmName     = f.farmName,
+                phone        = f.phone,
+                notes        = f.notes,
+                playerUserId = f.playerUserId or 0,
             }
             ContactManager:addContact(data)
-            -- If client, notify host to persist the new contact
             if g_server == nil then
-                local myFarmId = self:getMyFarmId()
+                local myUserId = self:getMyUserId()
                 g_client:getServerConnection():sendEvent(
-                    RI_ContactEvent.new("add", myFarmId, 0, data))
+                    RI_ContactEvent.new("add", myUserId, 0, data))
             end
             RoleplayPhone:saveInvoices()
         end
@@ -1983,7 +2191,31 @@ function RoleplayPhone:onHitboxClicked(hb)
 
     -- ── Settings screen ────────────────────────────────────────────────────
     if hb.id == "settings_tab_general"   then self.settingsTab = "general";   return end
+    if hb.id == "settings_tab_ringtones" then self.settingsTab = "ringtones"; return end
     if hb.id == "settings_tab_wallpaper" then self.settingsTab = "wallpaper"; return end
+
+    if hb.id == "ringtone_prev" then
+        local n = #self.RINGTONES
+        self.settings.ringtoneIndex = ((self.settings.ringtoneIndex - 2) % n) + 1
+        self.ringSample = self.ringtoneSamples[self.settings.ringtoneIndex]
+        self:saveSettings()
+        return
+    end
+    if hb.id == "ringtone_next" then
+        local n = #self.RINGTONES
+        self.settings.ringtoneIndex = (self.settings.ringtoneIndex % n) + 1
+        self.ringSample = self.ringtoneSamples[self.settings.ringtoneIndex]
+        self:saveSettings()
+        return
+    end
+    if hb.id == "ringtone_preview" then
+        local snd = self.ringtoneSamples[self.settings.ringtoneIndex]
+        if snd and snd ~= 0 then
+            stopSample(snd, 0, 0)
+            playSample(snd, 1, 1.0, 1.0, 0, 0)
+        end
+        return
+    end
 
     if hb.id == "wallp_prev" then
         local cur = self.previewWallpaper or self.settings.wallpaperIndex
@@ -2220,7 +2452,6 @@ end
 
 -- Backspace handler: removes last character from whatever field is active
 function RoleplayPhone:handleBackspace()
-    print("[RoleplayPhone] handleBackspace called, state=" .. tostring(self.state))
     if self.state == self.STATE.INVOICE_CREATE and self.form.activeField then
         local f = self.form.activeField
         local v = self.form[f] or ""
@@ -2305,6 +2536,20 @@ Mission00.onConnectionFinishedLoading = Utils.appendedFunction(
     Mission00.onConnectionFinishedLoading,
     function(mission, connection)
         if g_server == nil then return end  -- only host does this
+
+        -- Send host's own PlayerHello to the new client so they know host is online
+        local hostUserId = RoleplayPhone:getMyUserId()
+        local hostFarmId = RoleplayPhone:getMyFarmId()
+        local hostName   = RoleplayPhone:getFarmName(hostFarmId)
+        local hostPhone  = RoleplayPhone:hashPhone(hostUserId)
+        connection:sendEvent(RI_PlayerHelloEvent.new(hostUserId, hostFarmId, hostName, hostPhone))
+
+        -- Also send hellos for any other already-connected players
+        for userId, info in pairs(RoleplayPhone.onlineUsers) do
+            if userId ~= hostUserId then
+                connection:sendEvent(RI_PlayerHelloEvent.new(userId, info.farmId, info.name, info.phone))
+            end
+        end
 
         -- Send full farm list
         local farms = RoleplayPhone:getAvailableFarms()

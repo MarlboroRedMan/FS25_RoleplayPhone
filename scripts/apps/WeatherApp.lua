@@ -9,10 +9,10 @@ function RoleplayPhone:drawWeatherApp()
     local headerY = py + ph - 0.055 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.08, 0.14, 0.22, 1.0)
     self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.14, 0.18, 0.28, 0.011)
+                    g_i18n:getText("ui_btn_back"), 0.14, 0.18, 0.28, 0.011)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true); setTextColor(1,1,1,1)
-    renderText(cx, headerY + 0.016, 0.016, "WEATHER")
+    renderText(cx, headerY + 0.016, 0.016, g_i18n:getText("screen_title_weather"))
 
     -- ── Gather current conditions ─────────────────────────────────────────────
     local env     = g_currentMission and g_currentMission.environment
@@ -62,20 +62,20 @@ function RoleplayPhone:drawWeatherApp()
     -- Condition string, color, and ASCII symbol
     local condStr, condColor, condSymbol
     if isHailing then
-        condStr="Hail";         condColor={0.60,0.80,0.95}; condSymbol="[o o]"
+        condStr=g_i18n:getText("weather_cond_hail");         condColor={0.60,0.80,0.95}; condSymbol="[o o]"
     elseif isSnowing then
-        condStr="Snow";         condColor={0.85,0.92,1.00}; condSymbol="[* *]"
+        condStr=g_i18n:getText("weather_cond_snow");         condColor={0.85,0.92,1.00}; condSymbol="[* *]"
     elseif rainScale>0.70 then
-        condStr="Thunderstorm"; condColor={0.40,0.45,0.75}; condSymbol="[/!/]"
+        condStr=g_i18n:getText("weather_cond_thunderstorm"); condColor={0.40,0.45,0.75}; condSymbol="[/!/]"
     elseif rainScale>0.05 then
-        condStr = rainScale>0.50 and "Heavy Rain" or "Rain"
+        condStr = rainScale>0.50 and g_i18n:getText("weather_cond_heavy_rain") or g_i18n:getText("weather_cond_rain")
                                 condColor={0.40,0.60,0.90}; condSymbol="[~~~]"
     elseif cloudCover>0.70 then
-        condStr="Overcast";     condColor={0.70,0.75,0.85}; condSymbol="[###]"
+        condStr=g_i18n:getText("weather_cond_overcast");     condColor={0.70,0.75,0.85}; condSymbol="[###]"
     elseif cloudCover>0.30 then
-        condStr="Partly Cloudy";condColor={0.85,0.88,0.95}; condSymbol="[*~#]"
+        condStr=g_i18n:getText("weather_cond_partly_cloudy");condColor={0.85,0.88,0.95}; condSymbol="[*~#]"
     else
-        condStr="Clear";        condColor={1.00,0.88,0.30}; condSymbol="[***]"
+        condStr=g_i18n:getText("weather_cond_clear");        condColor={1.00,0.88,0.30}; condSymbol="[***]"
     end
 
     local function fmtTemp(c)
@@ -112,28 +112,30 @@ function RoleplayPhone:drawWeatherApp()
     setTextAlignment(RenderText.ALIGN_LEFT); setTextColor(0.65,0.75,0.90,0.90)
 
     local wStr = windSpeed>0.5
-        and (string.format("Wind  %d km/h",math.floor(windSpeed))..(windDir and "  "..windDir or ""))
-        or "Wind  Calm"
+        and (string.format(g_i18n:getText("weather_wind_speed_fmt"),math.floor(windSpeed))..(windDir and "  "..windDir or ""))
+        or g_i18n:getText("weather_wind_calm")
     renderText(detX, detY, 0.010, wStr)
     detY = detY - detStep
 
-    renderText(detX, detY, 0.010, string.format("Cloud  %d%%",math.floor(cloudCover*100)))
+    renderText(detX, detY, 0.010, string.format(g_i18n:getText("weather_cloud_fmt"),math.floor(cloudCover*100)))
     if humidity then
         detY = detY - detStep
-        renderText(detX, detY, 0.010, string.format("Humidity  %d%%",math.floor(humidity*100)))
+        renderText(detX, detY, 0.010, string.format(g_i18n:getText("weather_humidity_fmt"),math.floor(humidity*100)))
     end
     if groundWet and groundWet > 0.01 then
         detY = detY - detStep
-        local wetStr = groundWet>0.7 and "Wet" or groundWet>0.3 and "Damp" or "Moist"
+        local wetStr = groundWet>0.7 and g_i18n:getText("weather_ground_wet")
+            or groundWet>0.3 and g_i18n:getText("weather_ground_damp")
+            or g_i18n:getText("weather_ground_moist")
         setTextColor(0.55,0.75,0.95,0.90)
-        renderText(detX, detY, 0.010, "Ground  "..wetStr)
+        renderText(detX, detY, 0.010, string.format(g_i18n:getText("weather_ground_fmt"), wetStr))
     end
 
     -- ── Forecast ─────────────────────────────────────────────────────────────
     local fcastY = cardY - 0.026
     setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(true)
     setTextColor(0.55,0.70,0.90,0.85)
-    renderText(cardX+0.008, fcastY, 0.010, "FORECAST"); setTextBold(false)
+    renderText(cardX+0.008, fcastY, 0.010, g_i18n:getText("weather_section_forecast")); setTextBold(false)
 
     -- Condition maps
     local COND_MAP = {
@@ -148,6 +150,12 @@ function RoleplayPhone:drawWeatherApp()
         Storm={0.50,0.55,0.85}, Snow={0.85,0.92,1.00},   Hail={0.60,0.80,0.95},
         Fog={0.75,0.80,0.88},   Dust={0.80,0.70,0.45},   Twister={0.70,0.40,0.80},
     }
+    -- Maps COND_MAP internal keys to l10n keys for forecast label rendering
+    local COND_L10N = {
+        Clear="weather_cond_clear",   Cloudy="weather_cond_cloudy", Rain="weather_cond_rain",
+        Storm="weather_cond_storm",   Snow="weather_cond_snow",     Hail="weather_cond_hail",
+        Fog="weather_cond_fog",       Dust="weather_cond_dust",     Twister="weather_cond_twister",
+    }
     local function resolveCondition(entry)
         local raw = entry.weatherType or entry.conditionType or entry.condition
                     or entry.type or entry.name or entry.typeName
@@ -161,13 +169,20 @@ function RoleplayPhone:drawWeatherApp()
     local currentDay = env and env.currentDay or 0
     local dpp = (g_currentMission and g_currentMission.missionInfo
                  and g_currentMission.missionInfo.plannedDaysPerPeriod) or 1
-    local MONTHS = {"Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb"}
+    local MONTHS = {
+        g_i18n:getText("month_mar"), g_i18n:getText("month_apr"),
+        g_i18n:getText("month_may"), g_i18n:getText("month_jun"),
+        g_i18n:getText("month_jul"), g_i18n:getText("month_aug"),
+        g_i18n:getText("month_sep"), g_i18n:getText("month_oct"),
+        g_i18n:getText("month_nov"), g_i18n:getText("month_dec"),
+        g_i18n:getText("month_jan"), g_i18n:getText("month_feb"),
+    }
     local currentMonthIdx = math.floor((currentDay - 1) / dpp) % 12
     local function getDayLabel(relDay)
         if dpp == 1 then
             return MONTHS[(currentMonthIdx + relDay) % 12 + 1]
         else
-            return string.format("Day %d", currentDay + relDay)
+            return string.format(g_i18n:getText("ui_day_fmt"), currentDay + relDay)
         end
     end
 
@@ -227,7 +242,8 @@ function RoleplayPhone:drawWeatherApp()
             setTextAlignment(RenderText.ALIGN_LEFT); setTextColor(0.70,0.78,0.92,0.90)
             renderText(cardX+0.012, ry+rowH*0.30, 0.010, getDayLabel(entry.relDay))
             setTextColor(entry.col[1],entry.col[2],entry.col[3],0.95)
-            renderText(cardX+cardW*0.38, ry+rowH*0.30, 0.010, entry.label)
+            local l10nKey = COND_L10N[entry.label]
+            renderText(cardX+cardW*0.38, ry+rowH*0.30, 0.010, l10nKey and g_i18n:getText(l10nKey) or entry.label)
             setTextAlignment(RenderText.ALIGN_RIGHT); setTextColor(1,1,1,0.90)
             local tempStr
             if entry.maxTemp and entry.minTemp then
@@ -241,6 +257,6 @@ function RoleplayPhone:drawWeatherApp()
         end
     else
         setTextAlignment(RenderText.ALIGN_CENTER); setTextColor(0.40,0.48,0.60,0.80)
-        renderText(cx, fcastY-0.040, 0.011, "No forecast data available")
+        renderText(cx, fcastY-0.040, 0.011, g_i18n:getText("weather_no_forecast"))
     end
 end

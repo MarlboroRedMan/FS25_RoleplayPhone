@@ -13,13 +13,13 @@
 
     -- Back button
     self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.18, 0.20, 0.28, 0.011)
+                    g_i18n:getText("ui_btn_back"), 0.18, 0.20, 0.28, 0.011)
 
     -- Title
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, headerY + 0.016, 0.016, "INVOICES")
+    renderText(px + pw/2, headerY + 0.016, 0.016, g_i18n:getText("screen_title_invoices"))
 
     -- ── Tabs ──
     local tabY = headerY - 0.038
@@ -49,11 +49,11 @@
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(inboxActive)
     setTextColor(1, 1, 1, inboxActive and 1.0 or 0.5)
-    renderText(px + tabW/2, tabY + 0.012, 0.013, "INBOX")
+    renderText(px + tabW/2, tabY + 0.012, 0.013, g_i18n:getText("invoices_tab_inbox"))
 
     setTextBold(outboxActive)
     setTextColor(1, 1, 1, outboxActive and 1.0 or 0.5)
-    renderText(px + tabW + tabW/2, tabY + 0.012, 0.013, "OUTBOX")
+    renderText(px + tabW + tabW/2, tabY + 0.012, 0.013, g_i18n:getText("invoices_tab_outbox"))
 
     self:addHitbox("tab_inbox",  px,      tabY, tabW, tabH, {})
     self:addHitbox("tab_outbox", px+tabW, tabY, tabW, tabH, {})
@@ -77,12 +77,12 @@
 
         self:drawButton("btn_create_invoice",
                         px + 0.015, btnY, pw - 0.030, btnH,
-                        "+ Create Invoice", 0.10, 0.38, 0.18, 0.013)
+                        g_i18n:getText("invoices_btn_create"), 0.10, 0.38, 0.18, 0.013)
     elseif not inbox then
         -- Show read-only message so player understands why button is missing
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextColor(0.40, 0.45, 0.55, 0.70)
-        renderText(px + pw/2, listBottomY + 0.018, 0.009, "Contact your farm manager to send invoices")
+        renderText(px + pw/2, listBottomY + 0.018, 0.009, g_i18n:getText("invoices_manager_send_hint"))
         listBottomY = listBottomY + 0.030
         listH       = listTopY - listBottomY
     end
@@ -93,7 +93,7 @@
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextBold(false)
         setTextColor(0.4, 0.45, 0.55, 0.8)
-        local emptyMsg = inbox and "No invoices in your inbox" or "No invoices sent yet"
+        local emptyMsg = inbox and g_i18n:getText("invoices_empty_inbox") or g_i18n:getText("invoices_empty_outbox")
         renderText(px + pw/2, listBottomY + listH/2, 0.013, emptyMsg)
     else
         local rowH     = 0.072
@@ -116,7 +116,7 @@
             setTextBold(false)
             setTextColor(0.4, 0.45, 0.55, 0.7)
             renderText(px + pw/2, listBottomY - 0.001, 0.010,
-                       string.format("+ %d more invoices", #invoices - maxRows))
+                       string.format(g_i18n:getText("invoices_more_fmt"), #invoices - maxRows))
         end
     end
 end
@@ -144,16 +144,16 @@ function RoleplayPhone:drawInvoiceRow(inv, x, y, w, h, index)
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(true)
     setTextColor(0.75, 0.85, 1.0, 1.0)
-    renderText(x + indent, y + h - 0.020, 0.011, string.format("INV #%04d", inv.id or 0))
+    renderText(x + indent, y + h - 0.020, 0.011, string.format(g_i18n:getText("invoices_num_fmt"), inv.id or 0))
 
     setTextBold(false)
     setTextColor(0.5, 0.55, 0.65, 0.8)
     renderText(x + indent, y + h - 0.034, 0.010,
-               string.format("Day %s", tostring(inv.createdDate or "?")))
+               string.format(g_i18n:getText("ui_day_fmt"), tostring(inv.createdDate or "?")))
 
     -- Category
     setTextColor(0.85, 0.85, 0.95, 0.9)
-    local cat = inv.category or "Uncategorized"
+    local cat = inv.category or g_i18n:getText("invoices_uncategorized")
     if #cat > 28 then cat = cat:sub(1,26) .. ".." end
     renderText(x + indent, y + 0.030, 0.011, cat)
 
@@ -187,12 +187,12 @@ function RoleplayPhone:drawInvoiceDetail()
     local headerY = py + ph - 0.055 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
     self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.18, 0.20, 0.28, 0.011)
+                    g_i18n:getText("ui_btn_back"), 0.18, 0.20, 0.28, 0.011)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
     renderText(px + pw/2, headerY + 0.016, 0.015,
-               string.format("INVOICE #%04d", inv.id or 0))
+               string.format(g_i18n:getText("invoices_detail_title_fmt"), inv.id or 0))
 
     -- Status banner
     local sr, sg, sb = self:getStatusColor(inv.status)
@@ -201,7 +201,7 @@ function RoleplayPhone:drawInvoiceDetail()
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, bannerY + 0.010, 0.016, inv.status or "PENDING")
+    renderText(px + pw/2, bannerY + 0.010, 0.016, inv.status or g_i18n:getText("invoices_status_pending"))
 
     -- Detail fields
     local fieldX = px + 0.020
@@ -223,18 +223,18 @@ function RoleplayPhone:drawInvoiceDetail()
     local fromName = self:getFarmName(inv.fromFarmId)
     local toName   = self:getFarmName(inv.toFarmId)
 
-    drawDetail("FROM",        fromName)
-    drawDetail("TO",          toName)
-    drawDetail("CATEGORY",    inv.category)
-    drawDetail("AMOUNT",      "$" .. self:formatMoney(inv.amount or 0))
-    drawDetail("DUE DATE",    inv.dueDate or "Not set")
-    drawDetail("CREATED",     "Day " .. tostring(inv.createdDate or "?"))
+    drawDetail(g_i18n:getText("invoices_detail_from"),        fromName)
+    drawDetail(g_i18n:getText("invoices_detail_to"),          toName)
+    drawDetail(g_i18n:getText("invoices_detail_category"),    inv.category)
+    drawDetail(g_i18n:getText("invoices_detail_amount"),      "$" .. self:formatMoney(inv.amount or 0))
+    drawDetail(g_i18n:getText("invoices_detail_due_date"),    inv.dueDate or g_i18n:getText("invoices_detail_not_set"))
+    drawDetail(g_i18n:getText("invoices_detail_created"),     string.format(g_i18n:getText("ui_day_fmt"), tostring(inv.createdDate or "?")))
 
     if inv.description and inv.description ~= "" then
-        drawDetail("DESCRIPTION", inv.description)
+        drawDetail(g_i18n:getText("invoices_detail_description"), inv.description)
     end
     if inv.notes and inv.notes ~= "" then
-        drawDetail("NOTES", inv.notes)
+        drawDetail(g_i18n:getText("invoices_detail_notes"), inv.notes)
     end
 
     -- Action buttons (bottom) — only shown to moderator+
@@ -247,27 +247,27 @@ function RoleplayPhone:drawInvoiceDetail()
         if inv.toFarmId == myFarmId and inv.status ~= "PAID" then
             self:drawButton("btn_pay_invoice",
                             px + 0.015, btnY, pw*0.44, 0.045,
-                            "Pay Invoice", 0.10, 0.40, 0.18, 0.013)
+                            g_i18n:getText("invoices_btn_pay"), 0.10, 0.40, 0.18, 0.013)
         end
 
         -- Mark Paid button (shown to sender)
         if inv.fromFarmId == myFarmId and inv.status ~= "PAID" then
             self:drawButton("btn_mark_paid",
                             px + pw*0.54, btnY, pw*0.42, 0.045,
-                            "Mark as Paid", 0.28, 0.28, 0.10, 0.013)
+                            g_i18n:getText("invoices_btn_mark_paid"), 0.28, 0.28, 0.10, 0.013)
         end
 
         -- Reject button (shown to recipient if still PENDING)
         if inv.toFarmId == myFarmId and inv.status == "PENDING" then
             self:drawButton("btn_reject_invoice",
                             px + pw*0.54, btnY, pw*0.42, 0.045,
-                            "Reject", 0.42, 0.10, 0.10, 0.013)
+                            g_i18n:getText("invoices_btn_reject"), 0.42, 0.10, 0.10, 0.013)
         end
     else
         -- Regular player — read only
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextColor(0.40, 0.45, 0.55, 0.70)
-        renderText(px + pw/2, btnY + 0.015, 0.009, "Contact your farm manager to action this invoice")
+        renderText(px + pw/2, btnY + 0.015, 0.009, g_i18n:getText("invoices_manager_action_hint"))
     end
 end
 
@@ -284,21 +284,23 @@ function RoleplayPhone:drawCreateInvoice()
     local headerY = py + ph - 0.055 - headerH
     self:drawRect(px, headerY, pw, headerH, 0.10, 0.13, 0.20, 1.0)
     self:drawButton("btn_back", px+0.006, headerY+0.010, 0.055 * self.arScale, 0.030,
-                    "< Back", 0.18, 0.20, 0.28, 0.011)
+                    g_i18n:getText("ui_btn_back"), 0.18, 0.20, 0.28, 0.011)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, headerY + 0.016, 0.015, "CREATE INVOICE")
+    renderText(px + pw/2, headerY + 0.016, 0.015, g_i18n:getText("screen_title_create_invoice"))
 
-    local col1X = px + 0.015
-    local colW  = pw - 0.030
-    local curY  = headerY - 0.015
-    local fldH  = 0.050
+    local col1X  = px + 0.015
+    local colW   = pw - 0.030
+    local fldH   = 0.050
+    local fldGap = 0.008
+    local arrowW = 0.018
+    local curY   = headerY - 0.015
 
     -- ── To Farm selector ──
-    curY = curY - fldH - 0.008
-    local farms   = self:getAvailableFarms()
-    local farm    = farms[self.form.toFarmIndex] or farms[1]
+    curY = curY - fldH - fldGap
+    local farms    = self:getAvailableFarms()
+    local farm     = farms[self.form.toFarmIndex] or farms[1]
     local farmName = farm and farm.name or "Unknown"
 
     self:drawRect(col1X, curY, colW, fldH, 0.10, 0.14, 0.20, 1.0)
@@ -306,75 +308,75 @@ function RoleplayPhone:drawCreateInvoice()
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(false)
     setTextColor(0.55, 0.65, 0.80, 0.85)
-    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, "SEND TO")
-
-    -- Arrow buttons (small — keeps max space for farm name)
-    local arrowW = 0.018
+    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, g_i18n:getText("invoices_field_send_to"))
     local arrowsX = col1X + colW - arrowW*2 - 0.006
-    self:drawButton("farm_prev", arrowsX, curY + fldH - 0.030,
-                    arrowW, 0.020, "<", 0.20, 0.22, 0.32, 0.010)
-    self:drawButton("farm_next", arrowsX + arrowW + 0.004, curY + fldH - 0.030,
-                    arrowW, 0.020, ">", 0.20, 0.22, 0.32, 0.010)
+    self:drawButton("farm_prev", arrowsX, curY + fldH - 0.030, arrowW, 0.020, "<", 0.20, 0.22, 0.32, 0.010)
+    self:drawButton("farm_next", arrowsX + arrowW + 0.004, curY + fldH - 0.030, arrowW, 0.020, ">", 0.20, 0.22, 0.32, 0.010)
     setTextColor(1, 1, 1, 1)
     renderText(col1X + 0.010, curY + 0.010, 0.013, farmName)
 
-    -- ── Category selector ──
-    curY = curY - fldH - 0.008
-    local cats = InvoiceManager.categories
-    local cat  = cats[self.form.categoryIndex] or "Other"
-    local catDisplay = cat
-    if #catDisplay > 30 then catDisplay = catDisplay:sub(1,28) .. ".." end
+    -- ── Category Group selector ──
+    curY = curY - fldH - fldGap
+    local groups = InvoiceManager.categoryGroups
+    local group  = groups[self.form.categoryGroupIndex] or groups[1]
 
     self:drawRect(col1X, curY, colW, fldH, 0.10, 0.14, 0.20, 1.0)
     self:drawRect(col1X, curY+fldH-0.002, colW, 0.002, 0.5, 0.6, 0.8, 0.4)
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(false)
     setTextColor(0.55, 0.65, 0.80, 0.85)
-    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, "CATEGORY")
+    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, g_i18n:getText("invoices_field_category"))
     setTextColor(1, 1, 1, 1)
-    renderText(col1X + 0.010, curY + 0.010, 0.012, catDisplay)
+    renderText(col1X + 0.010, curY + 0.010, 0.012, group.name)
+    self:drawButton("cat_group_prev", col1X + colW - arrowW*2 - 0.008, curY + fldH - 0.030, arrowW, 0.020, "<", 0.20, 0.22, 0.32, 0.010)
+    self:drawButton("cat_group_next", col1X + colW - arrowW - 0.004, curY + fldH - 0.030, arrowW, 0.020, ">", 0.20, 0.22, 0.32, 0.010)
 
-    self:drawButton("cat_prev", col1X + colW - arrowW*2 - 0.008, curY + fldH - 0.030,
-                    arrowW, 0.020, "<", 0.20, 0.22, 0.32, 0.010)
-    self:drawButton("cat_next", col1X + colW - arrowW - 0.004, curY + fldH - 0.030,
-                    arrowW, 0.020, ">", 0.20, 0.22, 0.32, 0.010)
+    -- ── Category Type selector ──
+    curY = curY - fldH - fldGap
+    local types    = group.types
+    local typeName = types[self.form.categoryTypeIndex] or types[1]
+
+    self:drawRect(col1X, curY, colW, fldH, 0.10, 0.14, 0.20, 1.0)
+    self:drawRect(col1X, curY+fldH-0.002, colW, 0.002, 0.5, 0.6, 0.8, 0.4)
+    setTextAlignment(RenderText.ALIGN_LEFT)
+    setTextBold(false)
+    setTextColor(0.55, 0.65, 0.80, 0.85)
+    renderText(col1X + 0.010, curY + fldH - 0.016, 0.009, g_i18n:getText("invoices_field_type"))
+    setTextColor(1, 1, 1, 1)
+    renderText(col1X + 0.010, curY + 0.010, 0.012, typeName)
+    self:drawButton("cat_type_prev", col1X + colW - arrowW*2 - 0.008, curY + fldH - 0.030, arrowW, 0.020, "<", 0.20, 0.22, 0.32, 0.010)
+    self:drawButton("cat_type_next", col1X + colW - arrowW - 0.004, curY + fldH - 0.030, arrowW, 0.020, ">", 0.20, 0.22, 0.32, 0.010)
 
     -- ── Amount field ──
-    curY = curY - fldH - 0.008
+    curY = curY - fldH - fldGap
     self:drawField("field_amount", col1X, curY, colW, fldH,
-                   "AMOUNT ($)", self.form.amount,
+                   g_i18n:getText("invoices_field_amount_label"), self.form.amount,
                    self.form.activeField == "amount")
 
     -- ── Due Date field ──
-    curY = curY - fldH - 0.008
+    curY = curY - fldH - fldGap
     self:drawField("field_dueDate", col1X, curY, colW, fldH,
-                   "DUE DATE (e.g. Day 45)", self.form.dueDate,
+                   g_i18n:getText("invoices_field_due_date_label"), self.form.dueDate,
                    self.form.activeField == "dueDate")
 
-    -- ── Description field ──
-    curY = curY - fldH - 0.008
-    self:drawField("field_description", col1X, curY, colW, fldH,
-                   "DESCRIPTION", self.form.description,
-                   self.form.activeField == "description")
-
     -- ── Notes field ──
-    curY = curY - fldH - 0.008
+    curY = curY - fldH - fldGap
     self:drawField("field_notes", col1X, curY, colW, fldH,
-                   "Notes (job details / agreement)", self.form.notes,
+                   g_i18n:getText("invoices_field_notes_label"), self.form.notes,
                    self.form.activeField == "notes")
 
     -- ── Send button ──
     local sendY = py + 0.015
     self:drawButton("btn_send_invoice",
                     col1X, sendY, colW, 0.048,
-                    "SEND INVOICE", 0.10, 0.38, 0.18, 0.015)
+                    g_i18n:getText("invoices_btn_send"), 0.10, 0.38, 0.18, 0.015)
 end
 
 -- ─── Mouse event ──────────────────────────────────────────────────────────────
 function RoleplayPhone:submitInvoice()
     local amount = tonumber(self.form.amount)
     if not amount or amount <= 0 then
-        NotificationManager:push("rejected", "Enter a valid amount.")
+        NotificationManager:push("rejected", g_i18n:getText("invoices_notif_invalid_amount"))
         return
     end
 
@@ -383,17 +385,19 @@ function RoleplayPhone:submitInvoice()
     local myFarmId = self:getMyFarmId()
 
     if not toFarm then
-        NotificationManager:push("rejected", "No recipient farm selected.")
+        NotificationManager:push("rejected", g_i18n:getText("invoices_notif_no_recipient"))
         return
     end
 
     if toFarm.farmId == myFarmId then
-        NotificationManager:push("rejected", "Can't invoice your own farm.")
+        NotificationManager:push("rejected", g_i18n:getText("invoices_notif_own_farm"))
         return
     end
 
-    local cats = InvoiceManager.categories
-    local cat  = cats[self.form.categoryIndex] or "Other"
+    local groups   = InvoiceManager.categoryGroups
+    local group    = groups[self.form.categoryGroupIndex] or groups[1]
+    local typeName = group.types[self.form.categoryTypeIndex] or group.types[1]
+    local cat      = group.name .. " - " .. typeName
     local day  = (g_currentMission and g_currentMission.environment and
                   g_currentMission.environment.currentDay) or 0
 
@@ -408,7 +412,7 @@ function RoleplayPhone:submitInvoice()
             toFarmId    = toFarm.farmId,
             category    = cat,
             amount      = amount,
-            description = self.form.description,
+            description = "",
             notes       = self.form.notes,
             dueDate     = self.form.dueDate,
             status      = "PENDING",
@@ -427,7 +431,7 @@ function RoleplayPhone:submitInvoice()
             toFarmId    = toFarm.farmId,
             category    = cat,
             amount      = amount,
-            description = self.form.description,
+            description = "",
             notes       = self.form.notes,
             dueDate     = self.form.dueDate,
             status      = "PENDING",
@@ -441,7 +445,7 @@ function RoleplayPhone:submitInvoice()
     end
 
     NotificationManager:push("info",
-        string.format("Invoice for $%s sent to %s", self:formatMoney(amount), toFarm.name))
+        string.format(g_i18n:getText("invoices_notif_sent_fmt"), self:formatMoney(amount), toFarm.name))
 
     self:resetForm()
     self.currentTab = self.TAB.OUTBOX
@@ -449,10 +453,10 @@ function RoleplayPhone:submitInvoice()
 end
 
 function RoleplayPhone:resetForm()
-    self.form.toFarmIndex   = 1
-    self.form.categoryIndex = 1
+    self.form.toFarmIndex        = 1
+    self.form.categoryGroupIndex = 1
+    self.form.categoryTypeIndex  = 1
     self.form.amount        = ""
-    self.form.description   = ""
     self.form.notes         = ""
     self.form.dueDate       = ""
     self.form.activeField   = nil

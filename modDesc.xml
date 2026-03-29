@@ -7,7 +7,7 @@
         Built for serious RP communities that want a real in-game economy.
     </description>
 
-    <version>0.3.1</version>
+    <version>0.4.0</version>
     <author>MRM &amp; Claude (Anthropic)</author>
     <iconFilename>textures/icon.dds</iconFilename>
 	<multiplayer supported="true"/>
@@ -39,6 +39,7 @@
         <sourceFile filename="scripts/NotificationManager.lua"/>
         <sourceFile filename="scripts/UsedPlusCompat.lua"/>
         <sourceFile filename="scripts/RoleplayPhone.lua"/>
+        <sourceFile filename="scripts/RoleplayPhoneAPI.lua"/>
         <sourceFile filename="scripts/apps/WeatherApp.lua"/>
         <sourceFile filename="scripts/apps/InvoicesApp.lua"/>
         <sourceFile filename="scripts/apps/CallsApp.lua"/>

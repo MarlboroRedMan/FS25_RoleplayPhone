@@ -15,9 +15,9 @@
     self:drawRect(px, py + ph - 0.003, pw, 0.003, 0.25, 0.50, 1.0, 0.9)
 
     -- Status label
-    local statusStr = "Calling..."
-    if self.state == self.STATE.CALL_INCOMING then statusStr = "Incoming Call"
-    elseif self.state == self.STATE.CALL_ACTIVE then statusStr = "On Call" end
+    local statusStr = g_i18n:getText("call_status_calling")
+    if self.state == self.STATE.CALL_INCOMING then statusStr = g_i18n:getText("call_status_incoming")
+    elseif self.state == self.STATE.CALL_ACTIVE then statusStr = g_i18n:getText("call_status_active") end
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(false)
     setTextColor(0.55, 0.70, 1.0, 0.9)
@@ -26,7 +26,7 @@
     -- Contact name
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(cx, py + ph * 0.62, 0.018, call.contactName or "Unknown")
+    renderText(cx, py + ph * 0.62, 0.018, call.contactName or g_i18n:getText("phone_unknown_contact"))
 
     -- Timer / ringing dots
     setTextBold(false)
@@ -40,7 +40,7 @@
     elseif self.state == self.STATE.CALL_OUTGOING then
         local dots = string.rep(".", (math.floor(getTimeSec() * 2) % 4))
         setTextColor(0.60, 0.70, 0.85, 0.8)
-        renderText(cx, py + ph * 0.44, 0.012, "Ringing" .. dots)
+        renderText(cx, py + ph * 0.44, 0.012, g_i18n:getText("call_ringing") .. dots)
     end
 
     -- Decorative buttons (visual only — F8 does the actual action)
@@ -54,20 +54,20 @@
         self:drawRect(bx1, btnY, btnW, btnH, 0.08, 0.45, 0.18, 0.85)
         setTextBold(false)
         setTextColor(1, 1, 1, 0.9)
-        renderText(bx1 + btnW/2, btnY + 0.008, 0.010, "Answer")
+        renderText(bx1 + btnW/2, btnY + 0.008, 0.010, g_i18n:getText("call_btn_answer"))
         self:drawRect(bx2, btnY, btnW, btnH, 0.50, 0.10, 0.10, 0.85)
-        renderText(bx2 + btnW/2, btnY + 0.008, 0.010, "Decline")
+        renderText(bx2 + btnW/2, btnY + 0.008, 0.010, g_i18n:getText("call_btn_decline"))
     else
         self:drawRect(cx - btnW/2, btnY, btnW, btnH, 0.50, 0.10, 0.10, 0.85)
         setTextBold(false)
         setTextColor(1, 1, 1, 0.9)
-        renderText(cx, btnY + 0.008, 0.010, "End Call")
+        renderText(cx, btnY + 0.008, 0.010, g_i18n:getText("call_btn_end"))
     end
 
     -- Key hint — shows just the bound key name
     setTextBold(false)
     setTextColor(0.50, 0.60, 0.75, 0.70)
-    renderText(cx, py + 0.004, 0.009, "Press " .. self:getCallActionKeyName() .. " to answer / hang up")
+    renderText(cx, py + 0.004, 0.009, string.format(g_i18n:getText("call_key_hint_fmt"), self:getCallActionKeyName()))
 end
 
 -- ─── CONTACTS LIST screen ─────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ function RoleplayPhone:drawCallsList()
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, "Recent Calls")
+    renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, g_i18n:getText("screen_title_recent_calls"))
 
     -- List
     local history = self.callHistory
@@ -98,7 +98,7 @@ function RoleplayPhone:drawCallsList()
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextBold(false)
         setTextColor(0.45, 0.50, 0.60, 0.8)
-        renderText(px + pw / 2, py + ph / 2, 0.011, "No recent calls.")
+        renderText(px + pw / 2, py + ph / 2, 0.011, g_i18n:getText("calls_empty"))
         return
     end
 
@@ -115,16 +115,17 @@ function RoleplayPhone:drawCallsList()
 
         -- Direction icon color and symbol
         local dirColor = {1, 1, 1}
-        local dirSymbol = "→"
+        local dirSymbol = ">>"
+        local isMissed = entry.direction == "missed" or entry.direction == "missed_seen"
         if entry.direction == "incoming" then
             dirColor = {0.20, 0.80, 0.40}
-            dirSymbol = "↙"
-        elseif entry.direction == "missed" then
+            dirSymbol = "<<"
+        elseif isMissed then
             dirColor = {0.90, 0.25, 0.25}
-            dirSymbol = "↙"
+            dirSymbol = "<<"
         elseif entry.direction == "outgoing" then
             dirColor = {0.40, 0.65, 1.0}
-            dirSymbol = "↗"
+            dirSymbol = ">>"
         end
 
         -- Direction arrow
@@ -136,14 +137,14 @@ function RoleplayPhone:drawCallsList()
         -- Contact name
         setTextBold(true)
         setTextColor(0.92, 0.95, 1.0, 1.0)
-        renderText(px + 0.026, rowY - rowH + rowH * 0.28, 0.012, entry.name or "Unknown")
+        renderText(px + 0.026, rowY - rowH + rowH * 0.28, 0.012, entry.name or g_i18n:getText("phone_unknown_contact"))
 
         -- Direction label
         setTextBold(false)
         setTextColor(dirColor[1], dirColor[2], dirColor[3], 0.75)
-        local label = entry.direction == "missed" and "Missed" 
-            or entry.direction == "incoming" and "Incoming"
-            or "Outgoing"
+        local label = isMissed and g_i18n:getText("calls_dir_missed")
+            or entry.direction == "incoming" and g_i18n:getText("calls_dir_incoming")
+            or g_i18n:getText("calls_dir_outgoing")
         renderText(px + 0.026, rowY - rowH + rowH * 0.62, 0.009, label)
     end
 end
@@ -201,8 +202,29 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
     print("[RoleplayPhone] CURRENT_MISSION_LOADED fired, registering keybind")
     RoleplayPhone:registerKeybind()
 
-    -- Login notification: fires after "Entered Gameplay" so farmId is reliable
+    local myUserId = RoleplayPhone:getMyUserId()
     local myFarmId = RoleplayPhone:getMyFarmId()
+    local myName   = RoleplayPhone:getFarmName(myFarmId)
+    local myPhone  = RoleplayPhone:hashPhone(myUserId)
+
+    -- Announce ourselves so everyone knows we're online
+    -- Host broadcasts; client sends to server which rebroadcasts
+    local helloEvt = RI_PlayerHelloEvent.new(myUserId, myFarmId, myName, myPhone)
+    if g_server ~= nil then
+        -- Host adds themselves to their own onlineUsers table too
+        RoleplayPhone.onlineUsers[myUserId] = {
+            farmId = myFarmId,
+            name   = myName,
+            phone  = myPhone,
+        }
+        g_server:broadcastEvent(helloEvt)
+    elseif g_client ~= nil then
+        g_client:getServerConnection():sendEvent(helloEvt)
+    end
+    print(string.format("[RoleplayPhone] Sent PlayerHello: userId=%d farmId=%d phone=%s name=%s",
+        myUserId, myFarmId, myPhone, myName))
+
+    -- Login notification: fires after "Entered Gameplay" so farmId is reliable
     local unpaid = 0
     for _, inv in pairs(InvoiceManager.invoices) do
         if inv.toFarmId == myFarmId and inv.status == "PENDING" then
@@ -211,17 +233,16 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
     end
     if unpaid > 0 then
         local msg = unpaid == 1
-            and "You have 1 unpaid invoice."
-            or  string.format("You have %d unpaid invoices.", unpaid)
+            and g_i18n:getText("phone_notif_unpaid_one")
+            or  string.format(g_i18n:getText("phone_notif_unpaid_multi"), unpaid)
         NotificationManager:push("info", msg)
     end
 
-    -- Client-pull contact sync: ask host for our saved contacts
-    -- Host replies with RI_ContactSyncEvent containing this farm's contacts
-    if g_server == nil and myFarmId and myFarmId > 0 then
+    -- Client-pull contact sync: ask host for our saved contacts using playerUserId
+    if g_server == nil and myUserId and myUserId ~= 0 then
         g_client:getServerConnection():sendEvent(
-            RI_ContactEvent.new("request", myFarmId, 0, {}))
-        print(string.format("[RoleplayPhone] Requested contact sync for farm %d", myFarmId))
+            RI_ContactEvent.new("request", myUserId, 0, {}))
+        print(string.format("[RoleplayPhone] Requested contact sync for userId %d", myUserId))
     end
 end, RoleplayPhone)
 

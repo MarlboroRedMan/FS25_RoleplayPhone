@@ -183,7 +183,7 @@ function NotificationManager:mouseEvent(posX, posY, isDown, isUp, button)
         if self.dragging then
             -- Save final position
             self:saveHudPosition()
-            NotificationManager:push("info", "Phone icon position saved!")
+            NotificationManager:push("info", g_i18n:getText("notif_hud_saved"))
             print(string.format("[NotificationManager] HUD position saved: %.3f, %.3f", hud.x, hud.y))
         end
         self.mouseDown     = false
@@ -298,7 +298,7 @@ function NotificationManager:drawPopup(n, x, y, w, h, alpha)
     setTextAlignment(RenderText.ALIGN_LEFT)
     setTextBold(true)
     setTextColor(td.r, td.g, td.b, alpha)
-    renderText(x + 0.010, y + h - 0.016, 0.009, td.label)
+    renderText(x + 0.010, y + h - 0.016, 0.009, g_i18n:getText("notif_type_" .. td.label:lower()))
 
     -- Message text (white, slightly smaller)
     local msg = n.message or ""

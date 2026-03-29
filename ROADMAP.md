@@ -2,134 +2,112 @@
 
 ---
 
-## ✅ v0.1.0 — Released
+## ✅ v0.1.0
 - Phone UI (F7) with home screen, live clock and date
 - Invoice system with 23 categories
 - Inbox / Outbox with pay, reject, and mark as paid
 - Contact manager
 - Ping system
-- Full multiplayer sync via network events
+- Full multiplayer sync
 - Persistent save/load
 
 ---
 
-## ✅ v0.2.0 — Released
-### 📱 Phone UI Overhaul
-- Redesigned dock with proper square icons (aspect ratio fix for FS25 coordinate system)
-- DDS texture icons for all dock apps
-- App grid with swipeable pages and dot indicators
-- Wallpaper shows through settings screen
-
-### 🔔 Custom Notification System
-- Color coded by type: green (paid/credit), red (rejected/missed), blue (new invoice/message), yellow (warning)
-- Stacks cleanly for multiple notifications
-- Draggable HUD icon
-- Auto-dismisses after a few seconds
-
-### 📞 Call System
-- Call contacts directly from the phone
-- Compact non-freezing call popup (bottom-left, works while driving)
-- F8 keybind to answer or hang up — works on foot AND in vehicles
-- 30 second auto-timeout on unanswered calls
-- Missed call notification
-- Recent Calls history (current session)
-
-### 💬 Messaging
-- Send text messages between farms
-- Conversation threads per contact
-- Message history (current session only)
-
-### 📇 Contacts Overhaul
-- Contact detail screen with Call, Message, and Delete buttons
-- Full message thread screen
-
-### ⚙️ Settings Screen
-- Wallpaper selection (7 options)
-- Time format (12hr / 24hr)
-- Temperature units (°F / °C)
-- Battery display toggle
+## ✅ v0.2.0
+- Redesigned dock with DDS texture icons
+- App grid with swipeable pages
+- Custom notification system (color-coded, stacking, draggable HUD icon)
+- Call system with compact non-freezing popup
+- F8 keybind (answer / hang up, remappable, works in vehicles)
+- Messaging with per-contact conversation threads
+- Contact detail screen with call, message, and delete
+- Settings screen: wallpaper, time format, temperature units, battery toggle
 
 ---
 
-## ✅ v0.3.0 — Released
-### 🌤️ Weather App
-- Current conditions: temperature, condition label, wind speed/direction, cloud cover
-- ASCII condition symbol in current conditions card
-- 5-day forecast with real condition data read directly from save XML
-- Temperature ranges pulled from map's weather variation data (same source as base game)
-- Day labels match your time settings (month names at 1 day/period, day numbers at 7 days/period)
-- Forecast synced to clients via network event on connect
-- Humidity and ground wetness shown automatically if exposed by weather mods
-
-### 🔐 Farm Manager Permissions
-- Uses FS25's native farm manager permission system — no configuration needed
-- Farm hands: view only (invoices, weather, contacts)
-- Farm managers: full access (create/pay/reject invoices, send messages, calls)
-- Server admin (host / master user): full access across all farms
-- Permissions are farm-specific — leaving a farm removes permissions instantly
-
-### 🏗️ Code Refactor
-- Split monolithic RoleplayPhone.lua into separate app files
-- scripts/apps/WeatherApp.lua, InvoicesApp.lua, ContactsApp.lua, CallsApp.lua, SettingsApp.lua
-- Core file reduced from 3,482 to ~2,000 lines
-- Easier to maintain and extend going forward
-
-### 🐛 Bug Fixes & Polish
-- Spectator farm (Farm 14) no longer appears in invoice send-to list
-- Contact detail screen: farm name removed, shows phone and notes only
-- Message thread header: simplified to just contact name
-- Call popup Answer/Decline buttons fit correctly inside popup box
-- Settings labels (Temperature, Battery, Wallpaper) aligned correctly
-- Mod size reduced from 615 KB to 492 KB (dead textures removed, wallpaper recompressed)
+## ✅ v0.3.0
+- Weather app: current conditions + 5-day forecast
+- Weather condition icons (8 DDS textures)
+- Forecast synced to clients on connect
+- Farm manager permission system
+- Code refactor: split into separate app files under scripts/apps/
 
 ---
 
-## ✅ v0.3.1 — Current Release
-
-### 🖼️ New Wallpapers
-- 4 new photo wallpapers: Barn & Silos, Big Red Barn, Winter Red Barn, Hay Bales
-- Rose Gold color option added
-
-### ⚙️ Settings Overhaul
-- Settings screen split into tabbed layout: General and Wallpaper tabs
-- Dedicated full-screen wallpaper picker with arrow navigation and Apply button
-
-### 🌤️ Home Screen Weather Widget Redesign
-- Replaced big clock and Day/Season text with a real phone-style weather widget
-- Weather condition icon (8 DDS icons: Clear, Partly Cloudy, Cloudy, Rain, Heavy Rain, Snow, Storm, Hail)
-- Centered stack layout: icon → temperature → condition label → map name
-- Semi-transparent backdrop ensures readability on all wallpapers
-
-### 🔧 Keybind Fix
-- F8 answer/hangup now properly remappable via FS25's native Controls menu
-- Dynamic key hint in call popup reads the actual bound key from inputBinding.xml
+## ✅ v0.3.1
+- 4 new photo wallpapers
+- Settings tabbed layout (General / Wallpaper)
+- Wallpaper picker with preview
+- Home screen weather widget redesign
+- F8 remapping fix + dynamic key hint in call popup
 
 ---
 
-## 🔮 v0.3.x — Planned Polish
-- Market app (combined: crop prices + used vehicle marketplace + property management)
-- Additional wallpaper options
+## ✅ v0.3.2
+- Ringtone selection (4 options + preview)
+- Ringback tone for caller
+- Busy signal / unavailable tone
+- Notification sound for messages and invoices
+- Badge fixes (visible on 32:9, clears on open)
+- 7 translation files (de, fr, es, it, pl, pt, br)
+- Missed call badge and history fix
 
 ---
 
-## 🔮 v0.4.0 — UsedPlus Integration
-UsedPlus (github.com/XelaNull/FS25_UsedPlus) is a comprehensive finance and marketplace mod.
-Once stable, integrating with it would make our phone the central hub for the entire RP economy.
+## ✅ v0.4.0
+### 🔀 Player-Based Routing
+- Calls and messages now route by **playerUserId** instead of farmId
+- Each player auto-assigned a deterministic phone number from userId hash
+- `RI_PlayerHelloEvent` — players announce themselves on connect
+- Host tracks online status in real time — busy signal fires if player offline
+- Farm name kept on contacts for permissions and display
 
-**Planned apps powered by UsedPlus API:**
+### 📇 New Contact Picker
+- Add Contact screen replaced manual phone entry with online player picker
+- Arrow selector cycles through connected players
+- Phone number and playerUserId auto-filled from selection
+- Save button only activates when a player is selected
 
-### Credit Score App
-- Display farm's FICO-style credit score
-- Paying invoices through our mod builds credit history
+### 🔌 Public API
+- `RoleplayPhoneAPI.lua` — 9 functions for mod integration
+- pushNotification, sendMessage, sendInvoice, getInvoices, getInvoiceCount
+- isPlayerOnline, getOnlinePlayers, getPlayerPhone, getVersion
+- Designed for TisonK's ecosystem: TaxMod, IncomeMod, RandomWorldEvents, FarmTablet
 
-### Finance Manager App
-- View all active loans, leases, and financing deals
-- Make payments directly from the phone
-
-### Vehicle DNA App
-- Inspect a vehicle's hidden DNA (lemon, workhorse, legendary)
-- View reliability rating, hours, damage, wear
+### 🐛 Fixes
+- Missed calls now correctly recorded in call history
+- Weather widget icon no longer bleeds into temperature text
+- Steam Cloud conflict documented (disable Steam Cloud for clean saves)
 
 ---
 
-*No timeline, no pressure — just a wishlist to work from!*
+## 🔮 v0.4.x — Planned Polish
+- Split save file: separate XML for invoices and contacts
+- Cover rect scroll masking for Notes field
+- Ringtone preview stop-before-play (prevent overlap)
+- Recurring invoice reminders (notify every X days until paid)
+- Home screen Day/Season text redesign
+- Fix 3 hardcoded strings in InvoiceEvents.lua missed by l10n pass
+- Add new l10n keys to all 7 non-English language files
+
+---
+
+## 🔮 v0.5.0 — Market App
+- Crop price viewer
+- Used vehicle marketplace
+- Property / rental management
+
+---
+
+## 🔮 v0.6.0 — UsedPlus Integration
+- Credit Score app
+- Finance Manager app (loans, leases, payments)
+- Vehicle DNA app (condition, reliability, wear)
+
+---
+
+## 💡 Ideas Parking Lot
+- **Discord Companion App** — standalone Windows app that watches for phone events and forwards to a Discord webhook
+- **Controller support** — full UI navigation without mouse
+- **In-game Finance screen** — track paid/received invoices as line items inside the phone
+- **Formal lease agreement screen**

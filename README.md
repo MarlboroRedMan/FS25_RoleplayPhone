@@ -1,180 +1,145 @@
 # FS25 RoleplayPhone
 
-A Farming Simulator 25 mod that adds a full-featured roleplay smartphone UI for multiplayer servers. Built for serious RP communities that want an in-game economy with real accountability — invoices, contacts, messaging, calls, notifications, and more.
+A full-featured roleplay smartphone for multiplayer Farming Simulator 25 servers.
+
+Built for serious RP communities that want a real in-game economy and communication system — invoices, contacts, calls, messaging, weather, notifications, and a public API for integration with other mods.
 
 ---
 
 ## Features
 
-- 📱 **Phone UI** — Press F7 to open/close a modern smartphone interface with wallpaper and live weather widget
-- 🌤️ **Home Screen Weather Widget** — Condition icon, temperature, and map name displayed front and center on the home screen
-- 📄 **Invoice System** — Create and manage invoices between farms for rent, leases, vehicle sales, services, and more
-- 📥 **Inbox / Outbox** — Separate views for received and sent invoices
-- 💰 **Payment System** — Recipients can pay invoices directly (deducts from farm account), or senders can manually mark as paid
-- ✅ **Invoice Actions** — Accept, reject, or mark invoices as paid with full status tracking
-- 📋 **23 Invoice Categories** — Houses, campers, shops, storage, land leases, vehicle transactions, services, and more
-- 📇 **Contacts** — Save farm contacts with name, farm, phone number, and notes
-- 💬 **Messaging** — Send text messages between farms with conversation threads
-- 📞 **Calling** — Call contacts directly from the phone; F8 answers or hangs up (works while driving)
-- 🔔 **Notifications** — Color-coded on-screen notifications for invoices, messages, calls, and pings
-- 📋 **Recent Calls** — View call history for the current session (resets each time you load the game)
-- ⚙️ **Settings** — Tabbed settings with wallpaper picker, time format (12/24hr), temperature units (°F/°C), battery display
-- 🖼️ **Wallpapers** — 5 photo wallpapers (Countryside, Barn & Silos, Big Red Barn, Winter Red Barn, Hay Bales) plus color options
-- 💾 **Persistent Storage** — Invoices and contacts save with your game
-- 🌐 **Multiplayer Ready** — Full server/client sync via network events
-- 🌤️ **Weather App** — Full current conditions and multi-day forecast (see below)
+### 📱 Phone UI
+- Realistic smartphone interface with phone frame overlay
+- Home screen with live clock, date, season, and weather widget
+- App grid with swipeable pages
+- Dock with quick-access apps
+- 6 wallpaper options (color swatches + photo wallpapers)
+- Draggable HUD notification icon
+
+### 💰 Invoice System
+- 23 invoice categories (rent, services, labor, etc.)
+- Inbox and outbox with full detail view
+- Pay, reject, or mark invoices from the phone
+- Real money transfer via FS25's economy system
+- Full multiplayer sync — all players see the same invoice state
+
+### 📇 Contacts
+- Add contacts by selecting online players — phone number and routing auto-filled
+- Contact detail with call and message buttons
+- Per-player contact lists, synced to host and restored on reconnect
+
+### 📞 Calls
+- Call any contact directly from their detail screen
+- Non-freezing call popup — player keeps full movement while on a call
+- F8 keybind to answer or hang up (works on foot and in vehicles, remappable)
+- Ringback tone for caller while waiting
+- Busy signal when player is offline or unavailable
+- 30-second auto-timeout on unanswered calls
+- Missed call history with badge count
+
+### 💬 Messaging
+- Send and receive messages in per-contact conversation threads
+- Message history persists for the session
+- Unread message badge on contact rows
+
+### 🌤️ Weather App
+- Current conditions: temperature, condition, wind, cloud cover
+- Weather condition icon (8 DDS icons)
+- 5-day forecast with real data from the save XML
+- Temperature ranges from map weather data
+- Synced to clients on connect
+- °F / °C toggle in settings
+
+### 🔔 Notifications
+- Color-coded by type: invoice, paid, rejected, call, message, info
+- Stacks cleanly for multiple notifications
+- Auto-dismisses after a few seconds
+- Badge count on HUD icon
+
+### ⚙️ Settings
+- Time format: 12hr / 24hr
+- Temperature units: °F / °C
+- Wallpaper picker with preview
+- Ringtone selection (4 options: Classic, Farm, Tractor, Old Phone) with preview
+- Battery display toggle
+
+### 🔐 Permissions
+- Farm manager: full access
+- Farm worker: view only
+- Server host: full access across all farms
 
 ---
 
-## Weather App
+## Multiplayer
 
-The Weather app shows real in-game weather data pulled directly from FS25's internal systems — the same source the base game's own weather panel uses.
-
-**Current conditions:**
-- Temperature (°F or °C based on your settings)
-- Condition (Clear, Rain, Snow, Thunderstorm, etc.)
-- Wind speed and compass direction
-- Cloud cover percentage
-
-**Forecast:**
-- Up to 5 days ahead with real conditions and temperature ranges
-- Day labels automatically match your time settings:
-  - **1 day/period:** Shows month names (Sep, Oct, Nov...) — matches the base game
-  - **7 days/period:** Shows day numbers (Day 7, Day 8...)
-- Temperatures show high/low ranges pulled from the map's weather variation data
-
-> **Note on forecast temperatures:** Just like real-world weather apps (AccuWeather, Weather.com, etc.), forecast temperatures across different sources will vary slightly. Each app uses its own model. Our phone reads the exact per-variation temperature ranges defined in the map's weather configuration — these are the same values the game engine schedules. Minor differences from the base game's display are expected and normal, just as they are in real life.
+- All calls and messages route by **playerUserId** — works correctly even when multiple players share a farm
+- Each player is auto-assigned a deterministic phone number (e.g. `555-3761`) based on their userId
+- Players announce themselves on connect via PlayerHello — online status is tracked in real time
+- Busy signal fires immediately if the target player is offline
+- Contacts sync back to clients on reconnect
 
 ---
 
-## Invoice Categories
+## Public API
 
-| Category | Category |
+Other mods can integrate with RoleplayPhone using the public API in `scripts/RoleplayPhoneAPI.lua`.
+
+Always guard with `RoleplayPhone_checkInstalled()` first:
+
+```lua
+if RoleplayPhone_checkInstalled() then
+    RoleplayPhone_pushNotification("info", "Your worker finished ploughing Field 3")
+end
+```
+
+### Available functions
+
+| Function | Description |
 |---|---|
-| Rent - House (Small) | Rent - House (Medium) |
-| Rent - House (Large) | Rent - House (Luxury) |
-| Rent - Camper (Full Hookup) | Rent - Camper (Water & Power) |
-| Rent - Camper (Electric Only) | Rent - Camper (Land Use Only) |
-| Rent - Shop (Full Use) | Rent - Shop (Single Bay) |
-| Rent - Storage (Indoor) | Rent - Storage (Covered) |
-| Rent - Storage (Yard) | Lease - Agricultural Land |
-| Lease - Yard / Equipment Staging | Lease - Industrial / Mining Land |
-| Vehicle - Sale (Paid in Full) | Vehicle - Sale (Installment Payment) |
-| Vehicle - Lease / Rental | Service - Labor |
-| Service - Hauling | Service - Equipment Operation |
-| Service - Snow / Mowing / Cleanup | |
+| `RoleplayPhone_checkInstalled()` | Returns true if the phone mod is loaded |
+| `RoleplayPhone_pushNotification(type, message)` | Push a HUD notification |
+| `RoleplayPhone_sendMessage(toFarmId, senderName, text)` | Send a message from e.g. "Tax Office" |
+| `RoleplayPhone_sendInvoice(fromFarmId, toFarmId, category, amount, desc)` | Create an invoice programmatically |
+| `RoleplayPhone_getInvoices(farmId, inboxOnly)` | Get invoice table for a farm |
+| `RoleplayPhone_getInvoiceCount(farmId, status)` | Quick count by status |
+| `RoleplayPhone_isPlayerOnline(farmId)` | Check if a farm has connected players |
+| `RoleplayPhone_getOnlinePlayers()` | List all online players |
+| `RoleplayPhone_getPlayerPhone(farmId)` | Get a farm's auto-assigned phone number |
+| `RoleplayPhone_getVersion()` | Version string |
+
+Notification types: `info` `invoice` `paid` `rejected` `ping` `credit` `vehicle`
 
 ---
 
 ## Installation
 
-1. Download `FS25_RoleplayPhone.zip` from the [Releases](../../releases) page
-2. Place the zip file directly into your FS25 mods folder:
-   - **Windows:** `Documents\My Games\FarmingSimulator2025\mods\`
-3. Enable the mod in the FS25 mod manager before loading your save
-4. **Do not unzip** — FS25 reads mods directly from the zip file
+1. Download `FS25_RoleplayPhone.zip`
+2. Place in your `FarmingSimulator2025/mods/` folder
+3. Enable the mod in the mod manager
+4. Load a multiplayer game — press **F7** to open the phone
 
-> ⚠️ **Important:** Do not use the "Download ZIP" button from the main GitHub page — that version wraps the files in a subfolder and will not work. Always download from the Releases page.
+Keybinds are remappable via the in-game Controls menu.
 
 ---
 
-## Key Bindings
+## Controls
 
 | Key | Action |
 |---|---|
-| F7 | Open / Close phone |
-| F8 | Answer or hang up call (works on foot and in vehicles) |
-
-Both bindings are fully remappable in the FS25 key bindings menu under **Controls → On Foot / Vehicle**.
-
-> ⚠️ **F-key conflicts:** Some mods and FS25's developer mode use F-keys for their own functions. If you experience key conflicts, rebind the phone keys in the FS25 Controls settings to any unused key or key combination.
+| F7 | Open / close phone |
+| F8 | Answer / hang up call |
+| Backspace | Delete text in active field |
 
 ---
 
-## How to Use
+## Compatibility
 
-### Opening the Phone
-Press **F7** to toggle the phone open and closed. The phone cannot be opened while in a vehicle — but if a call comes in while driving, press **F8** to answer or hang up without needing to open the phone.
-
-### Sending an Invoice
-1. Open the phone and tap **Invoices**
-2. Tap **+ New Invoice**
-3. Select the recipient farm, category, amount, and add a description and notes
-4. Tap **Send** — the recipient will see it in their Inbox
-
-### Paying an Invoice
-1. Open your **Inbox**
-2. Select the invoice
-3. Tap **Pay** — the amount is deducted from your farm account and the invoice is marked PAID
-
-### Calling a Contact
-1. Open the phone and tap **Contacts**
-2. Tap a contact to open their detail screen
-3. Tap **Call** — a compact call popup appears (you can still drive)
-4. The other player presses **F8** to answer — or **F8** again to hang up
-
-### Messaging
-1. Open the phone and tap **Contacts**
-2. Tap a contact → tap **Message**
-3. Type your message and tap **Send**
-
-### A Note on Phone Numbers
-The phone number field is cosmetic RP flavor only — it doesn't route calls or do anything functional. Players can enter any format they like, up to 60 characters.
-
----
-
-## Multiplayer Notes
-
-- The **host** handles all invoice saving and loading
-- Clients receive invoice, contact, and weather forecast updates in real time via network sync
-- All invoice actions (pay, reject, mark paid) broadcast to all connected players
-- Incoming calls do not freeze either player — the call popup is non-blocking
-- **The phone is farm-based** — all players on the same farm share the same inbox, contacts, and message threads. This matches how FS25 works internally — the farm is the identity, not the individual player.
-- **Messages are session-only** — message history is not saved between sessions
-- **Contact farm name must match the actual farm name** in game for calls and messages to route correctly
-- **The zip filename matters** — the file must stay named `FS25_RoleplayPhone.zip`
-
----
-
-## Permissions
-
-The phone uses FS25's native farm manager permission system — no configuration required.
-
-| Action | Farm Hand | Farm Manager | Server Admin |
-|--------|-----------|--------------|--------------|
-| View invoices / weather / contacts | ✅ | ✅ | ✅ |
-| Create / pay / reject invoices | ❌ | ✅ | ✅ |
-| Send messages and make calls | ✅ | ✅ | ✅ |
-
-Permissions are farm-specific — if a player leaves a farm their manager rights don't follow them, exactly like the base game.
-
----
-
-## Current Version
-
-**v0.3.1** — New wallpapers, tabbed settings with wallpaper picker, redesigned home screen weather widget with condition icons, F8 keybind fix
-
----
-
-## 🤖 AI-Assisted Development
-
-This mod was developed collaboratively between a human creator and Claude (Anthropic AI). The vision, direction, design decisions, and testing were all driven by MarlboroRedMan — Claude handled the code implementation based on those ideas.
-
-### Codebase Statistics
-- **~3,500 lines of code** across 12 Lua scripts
-- **6 app modules** — Weather, Invoices, Contacts, Calls, Settings, and core phone logic
-- **5 core systems** — Invoice, Contact, Save, Network Events, and Notifications
-- Developed February–March 2026
+- Farming Simulator 25
+- Multiplayer: host + clients, LAN and online
+- Tested on 16:9 (1920x1080) and 32:9 (3840x1080)
 
 ---
 
 ## Credits
 
-**Mod Author:** MarlboroRedMan
-**Development Assistance:** Claude (Anthropic AI)
-
----
-
-## License
-
-This mod is for personal and multiplayer server use. Do not redistribute modified versions without permission.
+Built by MarlboroRedMan with Claude (Anthropic).

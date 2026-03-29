@@ -4,31 +4,20 @@ InvoiceManager = {}
 InvoiceManager.invoices     = {}
 InvoiceManager.nextInvoiceId = 1   -- sequential counter; saved/loaded with the game
 
--- Category list for the dropdown (v1)
-InvoiceManager.categories = {
-    "Rent - House (Small)",
-    "Rent - House (Medium)",
-    "Rent - House (Large)",
-    "Rent - House (Luxury)",
-    "Rent - Camper (Full Hookup)",
-    "Rent - Camper (Water & Power)",
-    "Rent - Camper (Electric Only)",
-    "Rent - Camper (Land Use Only)",
-    "Rent - Shop (Full Use)",
-    "Rent - Shop (Single Bay)",
-    "Rent - Storage (Indoor)",
-    "Rent - Storage (Covered)",
-    "Rent - Storage (Yard)",
-    "Lease - Agricultural Land",
-    "Lease - Yard / Equipment Staging",
-    "Lease - Industrial / Mining Land",
-    "Vehicle - Sale (Paid in Full)",
-    "Vehicle - Sale (Installment Payment)",
-    "Vehicle - Lease / Rental",
-    "Service - Labor",
-    "Service - Hauling",
-    "Service - Equipment Operation",
-    "Service - Snow / Mowing / Cleanup"
+-- Category groups for the two-row picker
+InvoiceManager.categoryGroups = {
+    { name = "Rent (House)",   types = { "Small", "Medium", "Large", "Luxury" } },
+    { name = "Rent (Camper)",  types = { "Full Hookup", "Water & Power", "Electric Only", "Land Use Only" } },
+    { name = "Rent (Shop)",    types = { "Full Use", "Single Bay" } },
+    { name = "Rent (Storage)", types = { "Indoor", "Covered", "Yard" } },
+    { name = "Lease",          types = { "Agricultural Land", "Yard / Equipment Staging", "Industrial / Mining Land" } },
+    { name = "Vehicle",        types = { "Sale (Paid in Full)", "Sale (Installment)", "Lease / Rental" } },
+    { name = "Service",        types = { "Labor", "Equipment Operation", "Snow / Mowing / Cleanup" } },
+    { name = "Field Work",     types = { "Plowing", "Cultivating", "Seeding", "Fertilizing", "Spraying", "Harvesting", "Baling", "Mowing", "Tedding", "Wrapping" } },
+    { name = "Transport",      types = { "Equipment Transport", "Seed / Input Delivery", "Fuel Delivery", "Grain / Crop Hauling", "Livestock Transport" } },
+    { name = "Livestock",      types = { "Animal Care", "Feeding" } },
+    { name = "Fine / Penalty", types = { "Fine", "Penalty" } },
+    { name = "Misc",           types = { "Custom" } },
 }
 
 function InvoiceManager:addInvoice(invoice)
