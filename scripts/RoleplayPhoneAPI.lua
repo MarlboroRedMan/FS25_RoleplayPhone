@@ -2,15 +2,31 @@
 -- Public API for FS25_RoleplayPhone
 -- Other mods can call these functions to interact with the phone system.
 --
--- USAGE EXAMPLE (in another mod):
+-- ── IMPORTANT: Cross-mod global access in FS25 ───────────────────────────────
+-- FS25 runs each mod in its own Lua environment. Bare global references like
+-- `RoleplayPhone_checkInstalled` only resolve within the mod that defined them.
+-- To call API functions from another mod you MUST go through getfenv(0), which
+-- is the shared engine-level environment visible to all mods:
 --
---   if RoleplayPhone_checkInstalled() then
---       RoleplayPhone_pushNotification("info", "Tax due: $1,500")
+--   local fn = getfenv(0)["RoleplayPhone_checkInstalled"]
+--   if fn and fn() then
+--       local push = getfenv(0)["RoleplayPhone_pushNotification"]
+--       if push then push("info", "Tax due: $1,500") end
 --   end
 --
--- All functions are safe to call even if the phone mod is not installed —
--- they silently do nothing and return nil/false rather than erroring.
--- Always guard with RoleplayPhone_checkInstalled() before sending data.
+-- For convenience, define a small helper in your own mod:
+--
+--   local function rpCall(name, ...)
+--       local fn = getfenv(0)[name]
+--       if fn then return fn(...) end
+--   end
+--
+--   if rpCall("RoleplayPhone_checkInstalled") then
+--       rpCall("RoleplayPhone_pushNotification", "info", "Tax due: $1,500")
+--   end
+--
+-- All functions are safe to call — they silently do nothing and return nil/false
+-- if the phone mod is not installed.  Always guard with checkInstalled() first.
 
 -- ─── RoleplayPhone_checkInstalled() ──────────────────────────────────────────
 -- Returns true if the phone mod is loaded and ready.
@@ -249,6 +265,9 @@ function RoleplayPhone_getPlayerPhone(farmId)
     end
     return nil
 end
+
+
+-- ─── RoleplayPhone_getVersion() ──────────────────────────────────────────────
 -- Returns the current version string of the phone mod.
 -- Useful for compatibility checks.
 --
@@ -308,4 +327,40 @@ function RoleplayPhone_getOnlinePlayers()
         })
     end
     return result
+end
+
+
+-- ─── Self-register into the shared engine environment ────────────────────────
+-- FS25 isolates each mod in its own Lua env. Bare globals defined here are NOT
+-- visible to other mods unless we explicitly write them into getfenv(0).
+--
+-- We register every public API function under its own name so any external mod
+-- can reach it with:
+--
+--   local fn = getfenv(0)["RoleplayPhone_checkInstalled"]
+--
+-- This block runs once at script-load time. getfenv(0) is always available.
+do
+    local env  = getfenv(0)
+    local self = getfenv(1)   -- this script's own env, where the functions live
+    local apiFunctions = {
+        "RoleplayPhone_checkInstalled",
+        "RoleplayPhone_pushNotification",
+        "RoleplayPhone_sendMessage",
+        "RoleplayPhone_isPlayerOnline",
+        "RoleplayPhone_getInvoices",
+        "RoleplayPhone_getInvoiceCount",
+        "RoleplayPhone_sendInvoice",
+        "RoleplayPhone_getPlayerPhone",
+        "RoleplayPhone_getVersion",
+        "RoleplayPhone_getOnlinePlayers",
+    }
+    local registered = 0
+    for _, name in ipairs(apiFunctions) do
+        if self[name] then
+            env[name] = self[name]
+            registered = registered + 1
+        end
+    end
+    print(string.format("[RoleplayPhone] API self-registered into shared env (%d functions)", registered))
 end
