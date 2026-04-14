@@ -2,6 +2,8 @@
 
 A full-featured roleplay smartphone for multiplayer Farming Simulator 25 servers.
 
+> ⚠️ **Active Development** — This mod is a work in progress. The current release is functional but a major update is in progress with significant improvements to saves, messaging, calls, and overall architecture. A new release will be pushed when it's ready.
+
 Built for serious RP communities that want a real in-game economy and communication system — invoices, contacts, calls, messaging, weather, notifications, and a public API for integration with other mods.
 
 ---
