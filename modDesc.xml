@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modDesc descVersion="106">
+    <title>Roleplay Phone</title>
+    <description>
+        A full-featured roleplay smartphone for multiplayer FS25 servers.
+        Invoices, contacts, messaging, calls, notifications, and more.
+        Built for serious RP communities that want a real in-game economy.
+    </description>
+
+    <version>0.4.0</version>
+    <author>MRM &amp; Claude (Anthropic)</author>
+    <iconFilename>textures/icon.dds</iconFilename>
+	<multiplayer supported="true"/>
+
+    <actions>
+        <action name="RI_OPEN_PHONE"   category="ONFOOT VEHICLE" axisType="BUTTON"/>
+        <action name="RI_CALL_ACTION"  category="ONFOOT VEHICLE" axisType="BUTTON"/>
+    </actions>
+
+    <inputBinding>
+        <actionBinding action="RI_OPEN_PHONE">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f7"/>
+        </actionBinding>
+        <actionBinding action="RI_CALL_ACTION">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f8"/>
+        </actionBinding>
+    </inputBinding>
+
+    <extraSourceFiles>
+        <!-- Core dependencies -->
+        <sourceFile filename="scripts/Invoice.lua"/>
+        <sourceFile filename="scripts/InvoiceManager.lua"/>
+        <sourceFile filename="scripts/InvoiceSave.lua"/>
+        <sourceFile filename="scripts/InvoiceEvents.lua"/>
+        <sourceFile filename="scripts/ContactManager.lua"/>
+        <sourceFile filename="scripts/NotificationManager.lua"/>
+        <sourceFile filename="scripts/UsedPlusCompat.lua"/>
+        <!-- Phone core: defines RoleplayPhone table, state, init, lifecycle, Mission00 hooks -->
+        <sourceFile filename="scripts/RoleplayPhone.lua"/>
+        <!-- Phone extensions: add methods to RoleplayPhone (load after core) -->
+        <sourceFile filename="scripts/PhoneHelpers.lua"/>
+        <sourceFile filename="scripts/PhoneUI.lua"/>
+        <sourceFile filename="scripts/PhoneWeather.lua"/>
+        <sourceFile filename="scripts/PhoneCallLogic.lua"/>
+        <sourceFile filename="scripts/PhoneInput.lua"/>
+        <!-- Public API for other mods -->
+        <sourceFile filename="scripts/RoleplayPhoneAPI.lua"/>
+        <!-- Apps: each adds draw methods to RoleplayPhone -->
+        <sourceFile filename="scripts/apps/HomeApp.lua"/>
+        <sourceFile filename="scripts/apps/WeatherApp.lua"/>
+        <sourceFile filename="scripts/apps/InvoicesApp.lua"/>
+        <sourceFile filename="scripts/apps/CallsApp.lua"/>
+        <sourceFile filename="scripts/apps/ContactsApp.lua"/>
+        <sourceFile filename="scripts/apps/MessagesApp.lua"/>
+        <sourceFile filename="scripts/apps/SettingsApp.lua"/>
+    </extraSourceFiles>
+
+    <l10n filenamePrefix="localization/l10n">
+        <text name="input_RI_OPEN_PHONE">
+            <en>Open Roleplay Phone</en>
+        </text>
+        <text name="input_RI_CALL_ACTION">
+            <en>Answer / Hang Up Call</en>
+        </text>
+    </l10n>
+</modDesc>

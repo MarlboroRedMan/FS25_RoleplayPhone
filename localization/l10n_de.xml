@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<l10n>
+  <texts>
+    <text name="invoices_title" text="Rechnungen"/>
+    <text name="inbox" text="Posteingang"/>
+    <text name="outbox" text="Postausgang"/>
+    <text name="create_invoice" text="Rechnung erstellen"/>
+    <text name="close" text="Schließen"/>
+    <text name="category" text="Kategorie"/>
+    <text name="amount" text="Betrag"/>
+    <text name="send_invoice" text="Rechnung senden"/>
+    <text name="phone_status_4g" text="4G"/>
+    <text name="phone_battery_low" text="NIEDRIG"/>
+    <text name="phone_hint_close" text="Außerhalb klicken zum Schließen"/>
+    <text name="phone_hint_switch_pages" text="&lt; &gt; Seiten wechseln"/>
+    <text name="weather_cond_clear" text="Klar"/>
+    <text name="weather_cond_hail" text="Hagel"/>
+    <text name="weather_cond_snow" text="Schnee"/>
+    <text name="weather_cond_heavy_rain" text="Starkregen"/>
+    <text name="weather_cond_rain" text="Regen"/>
+    <text name="phone_weather_location_fmt" text="@ %s"/>
+    <text name="app_label_weather" text="Wetter"/>
+    <text name="app_label_market" text="Markt"/>
+    <text name="app_label_invoices" text="Rechnungen"/>
+    <text name="app_label_contacts" text="Kontakte"/>
+    <text name="app_label_calls" text="Anrufe"/>
+    <text name="app_label_settings" text="Einstellungen"/>
+    <text name="phone_unknown_contact" text="Unbekannt"/>
+    <text name="phone_notif_unpaid_one" text="Sie haben 1 unbezahlte Rechnung."/>
+    <text name="phone_notif_unpaid_multi" text="Sie haben %d unbezahlte Rechnungen."/>
+    <text name="phone_notif_msg_from" text="MSG von %s: %s"/>
+    <text name="phone_notif_farm_not_found" text="Farm &apos;%s&apos; nicht online gefunden."/>
+    <text name="phone_notif_cant_reach" text="&apos;%s&apos; nicht erreichbar - sind sie online?"/>
+    <text name="phone_notif_call_declined" text="Anruf abgelehnt."/>
+    <text name="phone_notif_missed_call" text="Verpasster Anruf von %s"/>
+    <text name="phone_notif_insufficient_funds" text="Nicht genug Guthaben für diese Rechnung."/>
+    <text name="phone_notif_paid" text="$%s an %s bezahlt"/>
+    <text name="phone_notif_invoice_rejected" text="Rechnung #%s abgelehnt."/>
+    <text name="ui_btn_back" text="&lt; Zurück"/>
+    <text name="ui_day_fmt" text="Tag %s"/>
+    <text name="screen_title_weather" text="WETTER"/>
+    <text name="weather_cond_thunderstorm" text="Gewitter"/>
+    <text name="weather_cond_overcast" text="Bedeckt"/>
+    <text name="weather_cond_partly_cloudy" text="Teilweise bewölkt"/>
+    <text name="weather_cond_cloudy" text="Bewölkt"/>
+    <text name="weather_cond_storm" text="Sturm"/>
+    <text name="weather_cond_fog" text="Nebel"/>
+    <text name="weather_cond_dust" text="Staub"/>
+    <text name="weather_cond_twister" text="Tornado"/>
+    <text name="weather_wind_speed_fmt" text="Wind  %d km/h"/>
+    <text name="weather_wind_calm" text="Wind  Windstill"/>
+    <text name="weather_cloud_fmt" text="Bewölkung  %d%%"/>
+    <text name="weather_humidity_fmt" text="Luftfeuchte  %d%%"/>
+    <text name="weather_ground_wet" text="Nass"/>
+    <text name="weather_ground_damp" text="Feucht"/>
+    <text name="weather_ground_moist" text="Leicht feucht"/>
+    <text name="weather_ground_fmt" text="Boden  %s"/>
+    <text name="weather_section_forecast" text="VORHERSAGE"/>
+    <text name="weather_no_forecast" text="Keine Vorhersagedaten verfügbar"/>
+    <text name="month_mar" text="Mär"/>
+    <text name="month_apr" text="Apr"/>
+    <text name="month_may" text="Mai"/>
+    <text name="month_jun" text="Jun"/>
+    <text name="month_jul" text="Jul"/>
+    <text name="month_aug" text="Aug"/>
+    <text name="month_sep" text="Sep"/>
+    <text name="month_oct" text="Okt"/>
+    <text name="month_nov" text="Nov"/>
+    <text name="month_dec" text="Dez"/>
+    <text name="month_jan" text="Jan"/>
+    <text name="month_feb" text="Feb"/>
+    <text name="screen_title_invoices" text="RECHNUNGEN"/>
+    <text name="screen_title_create_invoice" text="RECHNUNG ERSTELLEN"/>
+    <text name="invoices_tab_inbox" text="EINGANG"/>
+    <text name="invoices_tab_outbox" text="AUSGANG"/>
+    <text name="invoices_btn_create" text="+ Rechnung erstellen"/>
+    <text name="invoices_manager_send_hint" text="Fragen Sie Ihren Farmmanager, Rechnungen zu senden"/>
+    <text name="invoices_empty_inbox" text="Keine Rechnungen im Posteingang"/>
+    <text name="invoices_empty_outbox" text="Noch keine Rechnungen gesendet"/>
+    <text name="invoices_more_fmt" text="+ %d weitere Rechnungen"/>
+    <text name="invoices_num_fmt" text="RG #%04d"/>
+    <text name="invoices_uncategorized" text="Unkategorisiert"/>
+    <text name="invoices_status_pending" text="AUSSTEHEND"/>
+    <text name="invoices_detail_title_fmt" text="RECHNUNG #%04d"/>
+    <text name="invoices_detail_from" text="VON"/>
+    <text name="invoices_detail_to" text="AN"/>
+    <text name="invoices_detail_category" text="KATEGORIE"/>
+    <text name="invoices_detail_amount" text="BETRAG"/>
+    <text name="invoices_detail_due_date" text="FÄLLIGKEITSDATUM"/>
+    <text name="invoices_detail_not_set" text="Nicht festgelegt"/>
+    <text name="invoices_detail_created" text="ERSTELLT"/>
+    <text name="invoices_detail_description" text="BESCHREIBUNG"/>
+    <text name="invoices_detail_notes" text="NOTIZEN"/>
+    <text name="invoices_btn_pay" text="Rechnung bezahlen"/>
+    <text name="invoices_btn_mark_paid" text="Als bezahlt markieren"/>
+    <text name="invoices_btn_reject" text="Ablehnen"/>
+    <text name="invoices_manager_action_hint" text="Fragen Sie Ihren Farmmanager, diese Rechnung zu bearbeiten"/>
+    <text name="invoices_field_send_to" text="SENDEN AN"/>
+    <text name="invoices_field_category" text="KATEGORIE"/>
+    <text name="invoices_field_type" text="TYP"/>
+    <text name="invoices_field_amount_label" text="BETRAG ($)"/>
+    <text name="invoices_field_due_date_label" text="FÄLLIGKEITSDATUM (z.B. Tag 45)"/>
+    <text name="invoices_field_notes_label" text="Notizen (Jobdetails / Vereinbarung)"/>
+    <text name="invoices_btn_send" text="RECHNUNG SENDEN"/>
+    <text name="invoices_notif_invalid_amount" text="Bitte gültigen Betrag eingeben."/>
+    <text name="invoices_notif_no_recipient" text="Keine Empfänger-Farm ausgewählt."/>
+    <text name="invoices_notif_own_farm" text="Eigene Farm kann nicht berechnet werden."/>
+    <text name="invoices_notif_sent_fmt" text="Rechnung über $%s an %s gesendet"/>
+    <text name="screen_title_contacts" text="Kontakte"/>
+    <text name="screen_title_contact_detail" text="Kontakt"/>
+    <text name="screen_title_new_contact" text="Neuer Kontakt"/>
+    <text name="contacts_btn_add" text="+ Hinzufügen"/>
+    <text name="contacts_empty_state" text="Keine Kontakte.  Tippe  + Hinzufügen  um einen zu speichern."/>
+    <text name="contacts_no_farm" text="Keine Farm"/>
+    <text name="contacts_label_phone" text="TELEFON"/>
+    <text name="contacts_label_notes" text="NOTIZEN"/>
+    <text name="contacts_btn_call" text="Anrufen"/>
+    <text name="contacts_btn_message" text="Nachricht"/>
+    <text name="contacts_btn_delete" text="Kontakt löschen"/>
+    <text name="contacts_field_name" text="Name"/>
+    <text name="contacts_field_farm_name" text="Farmname"/>
+    <text name="contacts_field_phone" text="Telefon (RP #)"/>
+    <text name="contacts_field_notes" text="Notizen"/>
+    <text name="contacts_validation_name" text="Name ist erforderlich"/>
+    <text name="contacts_btn_save" text="Kontakt speichern"/>
+    <text name="contacts_msg_placeholder" text="Nachricht..."/>
+    <text name="contacts_msg_empty" text="Noch keine Nachrichten."/>
+    <text name="contacts_msg_prompt" text="Sag etwas!"/>
+    <text name="contacts_btn_send" text="Senden"/>
+    <text name="call_status_calling" text="Ruft an..."/>
+    <text name="call_status_incoming" text="Eingehender Anruf"/>
+    <text name="call_status_active" text="Im Gespräch"/>
+    <text name="call_btn_answer" text="Annehmen"/>
+    <text name="call_btn_decline" text="Ablehnen"/>
+    <text name="call_btn_end" text="Auflegen"/>
+    <text name="call_ringing" text="Klingelt"/>
+    <text name="call_key_hint_fmt" text="%s drücken zum Annehmen / Auflegen"/>
+    <text name="screen_title_recent_calls" text="Zuletzt angerufen"/>
+    <text name="calls_empty" text="Keine letzten Anrufe."/>
+    <text name="calls_dir_missed" text="Verpasst"/>
+    <text name="calls_dir_incoming" text="Eingehend"/>
+    <text name="calls_dir_outgoing" text="Ausgehend"/>
+    <text name="screen_title_settings" text="Einstellungen"/>
+    <text name="settings_tab_general" text="Allgemein"/>
+    <text name="settings_tab_ringtones"       text="Klingeltöne"/>
+    <text name="settings_tab_wallpaper" text="Hintergrundbild"/>
+    <text name="settings_ringtone_label"      text="KLINGELTON"/>
+    <text name="settings_ringtone_preview"    text="Vorschau"/>
+    <text name="settings_clock_format" text="UHRZEITFORMAT"/>
+    <text name="settings_12hr" text="12 Std"/>
+    <text name="settings_24hr" text="24 Std"/>
+    <text name="settings_temperature" text="TEMPERATUR"/>
+    <text name="settings_temp_f" text="°F"/>
+    <text name="settings_temp_c" text="°C"/>
+    <text name="settings_battery_widget" text="AKKUANZEIGE"/>
+    <text name="settings_on" text="EIN"/>
+    <text name="settings_off" text="AUS"/>
+    <text name="settings_applied" text="Angewendet"/>
+    <text name="settings_apply" text="Anwenden"/>
+    <text name="settings_wallpaper_index_fmt" text="%d / %d"/>
+    <text name="notif_hud_saved" text="Telefonposition gespeichert!"/>
+    <text name="notif_type_invoice" text="RECHNUNG"/>
+    <text name="notif_type_paid" text="BEZAHLT"/>
+    <text name="notif_type_rejected" text="ABGELEHNT"/>
+    <text name="notif_type_ping" text="PING"/>
+    <text name="notif_type_info" text="INFO"/>
+    <text name="notif_type_credit" text="GUTSCHRIFT"/>
+    <text name="notif_type_vehicle" text="FAHRZEUG"/>
+    <text name="phone_notif_invoice_received" text="Von %s  $%s"/>
+    <text name="phone_notif_ping_fmt" text="%s: %s"/>
+  </texts>
+</l10n>

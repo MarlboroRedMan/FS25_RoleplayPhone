@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<l10n>
+  <texts>
+    <!-- Legacy keys from Session 1 (kept for compatibility) -->
+    <text name="invoices_title" text="Invoices"/>
+    <text name="inbox" text="Inbox"/>
+    <text name="outbox" text="Outbox"/>
+    <text name="create_invoice" text="Create Invoice"/>
+    <text name="close" text="Close"/>
+    <text name="category" text="Category"/>
+    <text name="amount" text="Amount"/>
+    <text name="send_invoice" text="Send Invoice"/>
+
+    <!-- Input action names are defined in modDesc.xml — not duplicated here -->
+
+    <!-- Status bar -->
+    <text name="phone_status_4g"   text="4G"/>
+    <text name="phone_battery_low" text="LOW"/>
+
+    <!-- Home screen hints -->
+    <text name="phone_hint_close"        text="Click outside to close"/>
+    <text name="phone_hint_switch_pages" text="&lt; &gt; switch pages"/>
+
+    <!-- Weather widget (home screen) -->
+    <text name="weather_cond_clear"      text="Clear"/>
+    <text name="weather_cond_hail"       text="Hail"/>
+    <text name="weather_cond_snow"       text="Snow"/>
+    <text name="weather_cond_heavy_rain" text="Heavy Rain"/>
+    <text name="weather_cond_rain"       text="Rain"/>
+    <text name="phone_weather_location_fmt" text="@ %s"/>
+
+    <!-- App labels (dock + grid) -->
+    <text name="app_label_weather"  text="Weather"/>
+    <text name="app_label_market"   text="Market"/>
+    <text name="app_label_invoices" text="Invoices"/>
+    <text name="app_label_contacts" text="Contacts"/>
+    <text name="app_label_calls"    text="Calls"/>
+    <text name="app_label_settings" text="Settings"/>
+
+    <!-- Notifications (RoleplayPhone.lua — Session 1) -->
+    <text name="phone_unknown_contact"          text="Unknown"/>
+    <text name="phone_notif_unpaid_one"         text="You have 1 unpaid invoice."/>
+    <text name="phone_notif_unpaid_multi"       text="You have %d unpaid invoices."/>
+    <text name="phone_notif_msg_from"           text="MSG from %s: %s"/>
+    <text name="phone_notif_farm_not_found"     text="Can&apos;t find farm &apos;%s&apos; online."/>
+    <text name="phone_notif_cant_reach"         text="Can&apos;t reach &apos;%s&apos; - are they online?"/>
+    <text name="phone_notif_call_declined"      text="Call declined."/>
+    <text name="phone_notif_missed_call"        text="Missed call from %s"/>
+    <text name="phone_notif_insufficient_funds" text="Insufficient funds to pay this invoice."/>
+    <text name="phone_notif_paid"               text="Paid $%s to %s"/>
+    <text name="phone_notif_invoice_rejected"   text="Invoice #%s rejected."/>
+
+    <!-- ─── Session 2 keys ──────────────────────────────────────────────── -->
+
+    <!-- Shared UI -->
+    <text name="ui_btn_back" text="&lt; Back"/>
+    <text name="ui_day_fmt"  text="Day %s"/>
+
+    <!-- WeatherApp — screen title -->
+    <text name="screen_title_weather" text="WEATHER"/>
+
+    <!-- WeatherApp — current conditions (additional conditions not in widget) -->
+    <text name="weather_cond_thunderstorm"  text="Thunderstorm"/>
+    <text name="weather_cond_overcast"      text="Overcast"/>
+    <text name="weather_cond_partly_cloudy" text="Partly Cloudy"/>
+
+    <!-- WeatherApp — forecast condition labels (from COND_MAP) -->
+    <text name="weather_cond_cloudy"  text="Cloudy"/>
+    <text name="weather_cond_storm"   text="Storm"/>
+    <text name="weather_cond_fog"     text="Fog"/>
+    <text name="weather_cond_dust"    text="Dust"/>
+    <text name="weather_cond_twister" text="Twister"/>
+
+    <!-- WeatherApp — detail panel -->
+    <text name="weather_wind_speed_fmt"   text="Wind  %d km/h"/>
+    <text name="weather_wind_calm"        text="Wind  Calm"/>
+    <text name="weather_cloud_fmt"        text="Cloud  %d%%"/>
+    <text name="weather_humidity_fmt"     text="Humidity  %d%%"/>
+    <text name="weather_ground_wet"       text="Wet"/>
+    <text name="weather_ground_damp"      text="Damp"/>
+    <text name="weather_ground_moist"     text="Moist"/>
+    <text name="weather_ground_fmt"       text="Ground  %s"/>
+    <text name="weather_section_forecast" text="FORECAST"/>
+    <text name="weather_no_forecast"      text="No forecast data available"/>
+
+    <!-- WeatherApp — month abbreviations (used in forecast day labels) -->
+    <text name="month_mar" text="Mar"/>
+    <text name="month_apr" text="Apr"/>
+    <text name="month_may" text="May"/>
+    <text name="month_jun" text="Jun"/>
+    <text name="month_jul" text="Jul"/>
+    <text name="month_aug" text="Aug"/>
+    <text name="month_sep" text="Sep"/>
+    <text name="month_oct" text="Oct"/>
+    <text name="month_nov" text="Nov"/>
+    <text name="month_dec" text="Dec"/>
+    <text name="month_jan" text="Jan"/>
+    <text name="month_feb" text="Feb"/>
+
+    <!-- InvoicesApp — screen titles -->
+    <text name="screen_title_invoices"       text="INVOICES"/>
+    <text name="screen_title_create_invoice" text="CREATE INVOICE"/>
+
+    <!-- InvoicesApp — tabs -->
+    <text name="invoices_tab_inbox"  text="INBOX"/>
+    <text name="invoices_tab_outbox" text="OUTBOX"/>
+
+    <!-- InvoicesApp — list view -->
+    <text name="invoices_btn_create"        text="+ Create Invoice"/>
+    <text name="invoices_manager_send_hint" text="Contact your farm manager to send invoices"/>
+    <text name="invoices_empty_inbox"       text="No invoices in your inbox"/>
+    <text name="invoices_empty_outbox"      text="No invoices sent yet"/>
+    <text name="invoices_more_fmt"          text="+ %d more invoices"/>
+    <text name="invoices_num_fmt"           text="INV #%04d"/>
+    <text name="invoices_uncategorized"     text="Uncategorized"/>
+    <text name="invoices_status_pending"    text="PENDING"/>
+
+    <!-- InvoicesApp — detail view -->
+    <text name="invoices_detail_title_fmt"    text="INVOICE #%04d"/>
+    <text name="invoices_detail_from"         text="FROM"/>
+    <text name="invoices_detail_to"           text="TO"/>
+    <text name="invoices_detail_category"     text="CATEGORY"/>
+    <text name="invoices_detail_amount"       text="AMOUNT"/>
+    <text name="invoices_detail_due_date"     text="DUE DATE"/>
+    <text name="invoices_detail_not_set"      text="Not set"/>
+    <text name="invoices_detail_created"      text="CREATED"/>
+    <text name="invoices_detail_description"  text="DESCRIPTION"/>
+    <text name="invoices_detail_notes"        text="NOTES"/>
+    <text name="invoices_btn_pay"             text="Pay Invoice"/>
+    <text name="invoices_btn_mark_paid"       text="Mark as Paid"/>
+    <text name="invoices_btn_reject"          text="Reject"/>
+    <text name="invoices_manager_action_hint" text="Contact your farm manager to action this invoice"/>
+
+    <!-- InvoicesApp — create invoice form -->
+    <text name="invoices_field_send_to"        text="SEND TO"/>
+    <text name="invoices_field_category"       text="CATEGORY"/>
+    <text name="invoices_field_type"           text="TYPE"/>
+    <text name="invoices_field_amount_label"   text="AMOUNT ($)"/>
+    <text name="invoices_field_due_date_label" text="DUE DATE (e.g. Day 45)"/>
+    <text name="invoices_field_notes_label"    text="Notes (job details / agreement)"/>
+    <text name="invoices_btn_send"             text="SEND INVOICE"/>
+    <text name="invoices_btn_send_short"        text="SEND"/>
+
+    <!-- InvoicesApp — notifications -->
+    <text name="invoices_notif_invalid_amount" text="Enter a valid amount."/>
+    <text name="invoices_notif_no_recipient"   text="No recipient farm selected."/>
+    <text name="invoices_notif_own_farm"       text="Can&apos;t invoice your own farm."/>
+    <text name="invoices_notif_sent_fmt"       text="Invoice for $%s sent to %s"/>
+
+    <!-- ContactsApp — screen titles -->
+    <text name="screen_title_contacts"       text="Contacts"/>
+    <text name="screen_title_messages"       text="Messages"/>
+    <text name="messages_empty_state"        text="No conversations yet"/>
+    <text name="screen_title_contact_detail" text="Contact"/>
+    <text name="screen_title_new_contact"    text="New Contact"/>
+
+    <!-- ContactsApp — list view -->
+    <text name="contacts_btn_add"     text="+ Add"/>
+    <text name="contacts_my_profile_label" text="My Profile"/>
+    <text name="contacts_empty_state" text="No contacts yet.  Tap  + Add  to save one."/>
+    <text name="contacts_no_farm"     text="No farm"/>
+
+    <!-- ContactsApp — detail view -->
+    <text name="contacts_label_phone" text="PHONE"/>
+    <text name="contacts_label_notes" text="NOTES"/>
+    <text name="contacts_btn_call"    text="Call"/>
+    <text name="contacts_btn_message" text="Message"/>
+    <text name="contacts_btn_delete"  text="Delete Contact"/>
+
+    <!-- ContactsApp — create / edit form -->
+    <text name="contacts_field_name"      text="Name"/>
+    <text name="contacts_field_player"    text="PLAYER"/>
+    <text name="contacts_no_players_online" text="No other players online"/>
+    <text name="contacts_field_farm_name" text="Farm Name"/>
+    <text name="contacts_field_phone"     text="Phone (RP #)"/>
+    <text name="contacts_field_notes"     text="Notes"/>
+    <text name="contacts_validation_name" text="Name is required"/>
+    <text name="contacts_btn_save"        text="Save Contact"/>
+
+    <!-- ContactsApp — message thread -->
+    <text name="contacts_msg_placeholder" text="Message..."/>
+    <text name="msg_scroll_older" text="older messages"/>
+    <text name="msg_scroll_newer" text="newer messages"/>
+    <text name="contacts_msg_empty"       text="No messages yet."/>
+    <text name="contacts_msg_prompt"      text="Say something!"/>
+    <text name="contacts_btn_send"        text="Send"/>
+
+    <!-- CallsApp -->
+    <text name="call_status_calling"  text="Calling..."/>
+    <text name="call_status_incoming" text="Incoming Call"/>
+    <text name="call_status_active"   text="On Call"/>
+    <text name="call_btn_answer"      text="Answer"/>
+    <text name="call_btn_decline"     text="Decline"/>
+    <text name="call_btn_end"         text="End Call"/>
+    <text name="call_ringing"         text="Ringing"/>
+    <text name="call_key_hint_fmt"    text="Press %s to answer / hang up"/>
+    <text name="screen_title_calls"        text="Calls"/>
+    <text name="screen_title_recent_calls" text="Recent Calls"/>
+    <text name="calls_tab_keypad"     text="Keypad"/>
+    <text name="calls_tab_recents"    text="Recents"/>
+    <text name="calls_tab_contacts"   text="Contacts"/>
+    <text name="calls_btn_call"       text="Call"/>
+    <text name="keypad_hint"          text="Enter number..."/>
+    <text name="calls_empty"          text="No recent calls."/>
+    <text name="calls_dir_missed"     text="Missed"/>
+    <text name="calls_dir_incoming"   text="Incoming"/>
+    <text name="calls_dir_outgoing"   text="Outgoing"/>
+    <text name="contacts_no_phone"    text="No number saved"/>
+    <text name="phone_notif_cant_reach_number" text="No player found with that number."/>
+
+    <!-- SettingsApp -->
+    <text name="screen_title_settings"        text="Settings"/>
+    <text name="settings_tab_general"         text="General"/>
+    <text name="settings_tab_ringtones"       text="Ringtones"/>
+    <text name="settings_tab_wallpaper"       text="Wallpaper"/>
+    <text name="settings_ringtone_label"      text="RINGTONE"/>
+    <text name="settings_ringtone_preview"    text="Preview"/>
+    <text name="settings_clock_format"        text="CLOCK FORMAT"/>
+    <text name="settings_12hr"                text="12 hr"/>
+    <text name="settings_24hr"                text="24 hr"/>
+    <text name="settings_temperature"         text="TEMPERATURE"/>
+    <text name="settings_temp_f"              text="°F"/>
+    <text name="settings_temp_c"              text="°C"/>
+    <text name="settings_battery_widget"      text="BATTERY WIDGET"/>
+    <text name="settings_on"                  text="ON"/>
+    <text name="settings_off"                 text="OFF"/>
+    <text name="settings_applied"             text="Applied"/>
+    <text name="settings_apply"               text="Apply"/>
+    <text name="settings_wallpaper_index_fmt" text="%d / %d"/>
+
+    <!-- NotificationManager -->
+    <text name="notif_hud_saved"     text="Phone icon position saved!"/>
+    <text name="notif_type_invoice"  text="INVOICE"/>
+    <text name="notif_type_paid"     text="PAID"/>
+    <text name="notif_type_rejected" text="REJECTED"/>
+    <text name="notif_type_ping"     text="PING"/>
+    <text name="notif_type_info"     text="INFO"/>
+    <text name="notif_type_credit"   text="CREDIT"/>
+    <text name="notif_type_vehicle"  text="VEHICLE"/>
+    <text name="phone_notif_invoice_received" text="From %s  $%s"/>
+    <text name="phone_notif_ping_fmt"         text="%s: %s"/>
+
+  </texts>
+</l10n>
