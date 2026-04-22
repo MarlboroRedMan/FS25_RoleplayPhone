@@ -17,6 +17,18 @@ function RoleplayPhone:drawCallsApp()
     self:drawRect(px, headerY, pw, headerH, 0.08, 0.11, 0.18, 1.0)
     self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
         g_i18n:getText("ui_btn_back"), 0.12, 0.15, 0.22, 0.010)
+
+    -- Clear All button — only on Recents tab when history exists
+    local tab = self.callsTab or "keypad"
+    if tab == "recents" and #self.callHistory > 0 then
+        local clrW = 0.044 * self.arScale
+        local clrH = 0.026
+        local clrX = px + pw - clrW - 0.006
+        local clrY = headerY + (headerH - clrH) / 2
+        self:drawButton("recents_clear_all", clrX, clrY, clrW, clrH,
+            g_i18n:getText("recents_clear_all"), 0.40, 0.10, 0.10, 0.009)
+    end
+
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
@@ -210,11 +222,12 @@ function RoleplayPhone:drawCallsRecents(px, py, pw, contentH)
         setTextColor(dirColor[1], dirColor[2], dirColor[3], 1.0)
         renderText(px + 0.008, rowY - rowH + rowH * 0.52, 0.013, dirSymbol)
 
-        -- Contact name
+        -- Contact name (use saved contact name if phone matches, else stored name)
         setTextBold(true)
         setTextColor(0.92, 0.95, 1.0, 1.0)
+        local displayName = self:getContactNameByPhone(entry.phone) or entry.name
         renderText(px + 0.028, rowY - rowH + rowH * 0.52, 0.012,
-            entry.name or g_i18n:getText("phone_unknown_contact"))
+            displayName or g_i18n:getText("phone_unknown_contact"))
 
         -- Direction label
         setTextBold(false)
@@ -418,9 +431,8 @@ end
 -- FS25 calls these on every registered mod event listener during game save/load.
 -- Without them the engine fails the entire save with Error 7.
 function _phoneKeyListener:saveToXMLFile(xmlFilename, key, usedModNames)
-    RoleplayPhone:saveInvoices()
-    RoleplayPhone:saveMessages()
-    RoleplayPhone:saveCallHistory()
+    -- saveSavegame handles all saving now — this is intentionally empty
+    -- (engine requires this function to exist to avoid Error 7)
 end
 
 function _phoneKeyListener:loadFromXMLFile(xmlFilename, key)
@@ -445,10 +457,40 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
     local myUserId   = RoleplayPhone:getMyUserId()
     local myFarmId   = RoleplayPhone:getMyFarmId()
     local myUniqueId = RoleplayPhone:getMyUniqueId()
-    -- FIX: use playerNickname, not farm name — so Jackson sees "Dan" not "Dan's Farm"
-    local myName   = (g_currentMission and g_currentMission.playerNickname)
-                     or RoleplayPhone:getFarmName(myFarmId)
-    local myPhone  = RoleplayPhone:hashPhone(myUserId)
+    local myName     = (g_currentMission and g_currentMission.playerNickname)
+                       or RoleplayPhone:getFarmName(myFarmId)
+    local myPhone    = RoleplayPhone:hashPhone(myUserId)
+
+    -- Load host's own player data now that uniqueId is available (local hosted sessions only)
+    -- On dedicated servers all player data is pushed via sync events — no direct file load needed
+    if g_server ~= nil and myUniqueId ~= "" then
+        local entry    = RoleplayPhone:getOrCreateRegistryEntry(myUniqueId, myPhone)
+        local filename = RoleplayPhone:buildPlayerFilename(myName, entry.fileId)
+        RoleplayPhone:loadPlayerData(filename, true)
+        print("[RoleplayPhone] Host data loaded: " .. filename)
+
+        -- Repopulate messageDisplayNames for u_ keyed threads (unknown senders)
+        local reg = RoleplayPhone:loadPlayerRegistry()
+        for key, _ in pairs(RoleplayPhone.messages) do
+            if type(key) == "string" and key:sub(1, 2) == "u_" then
+                local uid = key:sub(3)
+                local info = { name = "Unknown", phone = "", userId = 0 }
+                for _, regEntry in ipairs(reg) do
+                    if regEntry.uniqueId == uid then
+                        info.phone = regEntry.phone or ""
+                        info.name  = regEntry.phone or "Unknown"
+                        break
+                    end
+                end
+                -- Fallback: pull senderName from first message in thread
+                if info.name == "Unknown" then
+                    local msgs = RoleplayPhone.messages[key]
+                    if msgs and msgs[1] then info.name = msgs[1].senderName or "Unknown" end
+                end
+                RoleplayPhone.messageDisplayNames[key] = info
+            end
+        end
+    end
 
     -- Announce ourselves so everyone knows we're online
     local helloEvt = RI_PlayerHelloEvent.new(myUserId, myFarmId, myName, myPhone, myUniqueId)
@@ -480,10 +522,5 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
         NotificationManager:push("info", msg)
     end
 
-    -- Client-pull contact sync
-    if g_server == nil and myUserId and myUserId ~= 0 then
-        g_client:getServerConnection():sendEvent(
-            RI_ContactEvent.new("request", myUserId, 0, {}))
-        print(string.format("[RoleplayPhone] Requested contact sync for userId %d", myUserId))
-    end
+    -- Contact sync is now push-based (server pushes on connect) — no client pull needed
 end, RoleplayPhone)

@@ -239,6 +239,7 @@
     <text name="notif_type_vehicle"  text="VEHICLE"/>
     <text name="phone_notif_invoice_received" text="From %s  $%s"/>
     <text name="phone_notif_ping_fmt"         text="%s: %s"/>
+    <text name="recents_clear_all"            text="Clear"/>
 
   </texts>
 </l10n>

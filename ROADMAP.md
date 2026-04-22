@@ -61,41 +61,42 @@ New structure: owns all 3 tabs internally (Keypad / Recents / Contacts).
 - Back button stays — returns to home screen
 - Tab bar handles within-app navigation only
 
-### 5. ContactsApp Cleanup
-Not a full rewrite — targeted cleanup.
-- Add My Profile section at top (local player name + phone number)
-- Remove old tab bar remnants
-- Keep Back button
-- Call button → exits Contacts, opens Calls app
-- Message button → exits Contacts, opens Messages app
+### 5. ContactsApp Cleanup ✅ DONE
+- My Profile section added at top (local player name + phone number)
+- Call button routes to Calls app keypad
+- Message button routes to Messages app
 
-### 6. MessagesApp (new standalone app)
-Extract messaging from ContactsApp into its own app.
+### 6. MessagesApp ✅ DONE
 - Standalone app on home screen
-- Conversation threads per contact
-- Enter to send
-- Contact card message type (see below)
+- Conversation list with unread badges
+- Message threads with scroll, word wrap, timestamps
+- Delete individual message threads
+- Full MP sync — history persists across reconnects for all players
 
-### 7. Home Screen Layout
-- Screen 1: Invoices, Messages, Calls, Settings
+### 7. Home Screen Layout ✅ DONE
+- Screen 1: Invoices, Messages, Calls, Settings (dock)
 - Screen 2: Contacts, Weather, Market (placeholder)
-- Status bar style notification icons top-left (unread messages, missed calls)
+- DDS dock icons for all apps
 
-### 8. Fix: onlineUsers Stale Entries
-Players who disconnect never get removed from onlineUsers.
-Fix: host periodically compares onlineUsers against connectionsToPlayer,
-removes entries for players no longer connected.
-(connectionsToPlayer structure confirmed once Jackson MP test runs)
+### 8. onlineUsers Stale Entries ✅ DONE
+- Host polls playerSystem:getPlayerByUserId() every 5s
+- Stale entries removed, client file saved on disconnect
+- Uses engine's PlayerSystem API directly
 
 ---
 
 ## Planned Features
 
-### Contact Card via Messages
+### Contact Card via Messages — NEXT
 Send your contact card through the Messages app.
-- "Share Card" button in Messages compose
-- Renders as a card in the thread (name, phone, farm) with Save button
-- Save adds to Contacts, button changes to "Saved" (greyed out)
+Three ways to add contacts:
+1. Contact card — "Share Card" button in Messages compose sends your card as a
+   special message type. Renders in thread as a card (name, phone, farm) with
+   a Save button. Save adds to Contacts, button changes to "Saved" (greyed out).
+2. Manual entry in ContactsApp — plain text fields (name, phone, notes).
+   Player selector arrows removed entirely. For out-of-band number exchange.
+3. Unknown sender "+" button — already built. Pre-fills from unknown sender info
+   when tapped in the message thread header.
 
 ### Proximity Contact Share ("AirDrop")
 Share contact info with a nearby player — no phone number exchange needed.
@@ -153,8 +154,7 @@ Rent a 3-day server once mod is feature complete.
 
 ## Known Bugs
 
-- onlineUsers never cleaned up on player disconnect
-  (addressed in build order step 8)
+- tempsavegame roleplayers.xml error on autosave — harmless, fileExists check needed
 
 ---
 

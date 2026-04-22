@@ -138,7 +138,9 @@ RoleplayPhone.selectedContact = nil
 RoleplayPhone.messages            = {}
 RoleplayPhone.messageDisplayNames = {}   -- [key] = {name, phone} for senders not in contacts
 RoleplayPhone.messageCompose      = { text = "", active = false }
-RoleplayPhone.unreadMessages = {}
+RoleplayPhone.unreadMessages      = {}
+RoleplayPhone.playerMessages      = {}   -- [uniqueId] = messages table for connected clients (server only)
+RoleplayPhone.playerCalls         = {}   -- [uniqueId] = callHistory table for connected clients (server only)
 
 -- ─── Call state ───────────────────────────────────────────────────────────────
 RoleplayPhone.call = {
@@ -273,6 +275,7 @@ function RoleplayPhone:loadSavedData()
     local dir = self:getSaveDir()
     if not dir then return end
 
+    -- Load invoices (shared file — all players)
     local invFile = loadXMLFile("roleplayInvoicesXML", dir .. "/roleplayInvoices.xml")
     if invFile and invFile ~= 0 then
         InvoiceSave:loadFromXML(invFile, "roleplayInvoices")
@@ -283,24 +286,7 @@ function RoleplayPhone:loadSavedData()
     else
         print("[RoleplayPhone] No saved invoices found (new save or first run)")
     end
-
-    local conFile = loadXMLFile("roleplayContactsXML", dir .. "/roleplayContacts.xml")
-    if conFile and conFile ~= 0 then
-        ContactManager:loadFromXML(conFile, "roleplayContacts")
-        delete(conFile)
-    else
-        print("[RoleplayPhone] No saved contacts found (new save or first run)")
-    end
-
-    self:loadMessages()
-    self:loadCallHistory()
-
-    local hostUserId   = self:getMyUserId()
-    local hostUniqueId = self:getMyUniqueId()
-    local key = hostUniqueId ~= "" and hostUniqueId or tostring(hostUserId)
-    ContactManager.userContacts[key] = ContactManager.contacts
-    print(string.format("[RoleplayPhone] Bootstrapped userContacts[%s] with %d contacts",
-        key ~= "" and key:sub(1,8) .. "..." or tostring(hostUserId), #ContactManager.contacts))
+    -- Host player data is loaded in CURRENT_MISSION_LOADED where uniqueId is available
 end
 
 -- ─── Open / Close ─────────────────────────────────────────────────────────────
@@ -401,6 +387,7 @@ function RoleplayPhone:receiveMessage(contactKey, fromUserId, senderName, text, 
         text = text, gameDay = gameDay or 0, gameTime = gameTime or 0, sent = sent or false,
     })
     if sent then return end
+    if self.isSyncing then return end  -- historical sync, no notification
     local viewing = ((self.state == self.STATE.CONTACT_DETAIL or self.state == self.STATE.MESSAGE_THREAD)
                      and self.selectedContact == contactKey)
     if not viewing then
@@ -430,7 +417,17 @@ function RoleplayPhone:sendMessage()
     -- Unknown sender (not in contacts) — key is a string like "u_2"
     if type(self.selectedContact) == "string" then
         local info = self.messageDisplayNames[self.selectedContact]
-        if not info or not info.userId or info.userId == 0 then return end
+        if not info then return end
+        -- userId may not be set yet if loaded from registry — resolve from onlineUsers by phone
+        if not info.userId or info.userId == 0 then
+            for uid, u in pairs(RoleplayPhone.onlineUsers) do
+                if u.phone and u.phone == info.phone then
+                    info.userId = uid
+                    break
+                end
+            end
+        end
+        if not info.userId or info.userId == 0 then return end
         toUserId    = info.userId
         displayName = info.phone ~= "" and info.phone or info.name
     else
@@ -446,7 +443,7 @@ function RoleplayPhone:sendMessage()
     end
 
     local myUserId = self:getMyUserId()
-    local myName   = self:getFarmName(self:getMyFarmId())
+    local myName   = (g_currentMission and g_currentMission.playerNickname) or self:getFarmName(self:getMyFarmId())
     local gameDay  = (g_currentMission and g_currentMission.environment
                       and g_currentMission.environment.currentDay) or 0
     local gameTime = (g_currentMission and g_currentMission.environment
@@ -455,13 +452,32 @@ function RoleplayPhone:sendMessage()
     local evt = RI_MessageEvent.new(myUserId, toUserId, myName, text, gameDay, gameTime)
     if g_server ~= nil then
         -- Server: find recipient's connection and send directly (already received locally above)
-        local conn = nil
-        if g_currentMission and g_currentMission.connectionsToPlayer then
-            for c, player in pairs(g_currentMission.connectionsToPlayer) do
-                if player.userId == toUserId then conn = c; break end
-            end
-        end
+        local ps   = g_currentMission and g_currentMission.playerSystem
+        local rp   = ps and ps:getPlayerByUserId(toUserId)
+        local conn = rp and rp.connection
         if conn then conn:sendEvent(evt) end
+
+        -- Store host-sent message in recipient's server-side playerMessages so it syncs on reconnect
+        local myUniqueId        = self:getMyUniqueId()
+        local recipientInfo     = self.onlineUsers[toUserId]
+        local recipientUniqueId = recipientInfo and recipientInfo.uniqueId or ""
+        if recipientUniqueId ~= "" then
+            if not self.playerMessages[recipientUniqueId] then
+                self.playerMessages[recipientUniqueId] = {}
+            end
+            local key = "in_" .. (myUniqueId ~= "" and myUniqueId or tostring(self:getMyUserId()))
+            if not self.playerMessages[recipientUniqueId][key] then
+                self.playerMessages[recipientUniqueId][key] = {}
+            end
+            table.insert(self.playerMessages[recipientUniqueId][key], {
+                fromUserId = myUserId,
+                senderName = myName,
+                text       = text,
+                gameDay    = gameDay,
+                gameTime   = gameTime,
+                sent       = false,
+            })
+        end
     elseif g_client ~= nil then
         g_client:getServerConnection():sendEvent(evt)
     end
@@ -490,97 +506,124 @@ function RoleplayPhone:saveInvoices()
     print("[RoleplayPhone] Invoices saved")
 end
 
-function RoleplayPhone:saveContacts()
-    if not g_currentMission or not g_currentMission.missionInfo then return end
+-- ─── Per-player data save/load ────────────────────────────────────────────────
+
+-- Saves contacts, messages, and call history for one player into their own file.
+-- isHost=true means we're saving the host's own runtime data.
+-- isHost=false means we're saving data that was synced from a client.
+function RoleplayPhone:savePlayerData(filename, contacts, messages, callHistory)
     local dir = self:getSaveDir()
     if not dir then return end
-    local xmlFile = createXMLFile("roleplayContactsXML", dir .. "/roleplayContacts.xml", "roleplayContacts")
-    if xmlFile == 0 then return end
-    ContactManager:saveToXML(xmlFile, "roleplayContacts")
-    saveXMLFile(xmlFile); delete(xmlFile)
-    print("[RoleplayPhone] Contacts saved")
-end
+    local path    = dir .. "/" .. filename .. ".xml"
+    local xmlFile = createXMLFile("roleplayPlayerXML", path, "roleplayData")
+    if not xmlFile or xmlFile == 0 then
+        print("[RoleplayPhone] ERROR: could not create " .. path)
+        return
+    end
 
-function RoleplayPhone:saveMessages()
-    if not g_currentMission or not g_currentMission.missionInfo then return end
-    local dir = self:getSaveDir()
-    if not dir then return end
-    local xmlFile = createXMLFile("roleplayMessagesXML", dir .. "/roleplayMessages.xml", "roleplayMessages")
-    if xmlFile == 0 then return end
+    -- Contacts
+    local cIdx = 0
+    for _, c in ipairs(contacts or {}) do
+        local cKey = string.format("roleplayData.contacts.contact(%d)", cIdx)
+        setXMLString(xmlFile, cKey .. "#name",         c.name         or "")
+        setXMLString(xmlFile, cKey .. "#farmName",     c.farmName     or "")
+        setXMLString(xmlFile, cKey .. "#phone",        c.phone        or "")
+        setXMLString(xmlFile, cKey .. "#notes",        c.notes        or "")
+        setXMLInt(xmlFile,    cKey .. "#playerUserId", c.playerUserId or 0)
+        cIdx = cIdx + 1
+    end
 
+    -- Messages
     local MESSAGE_CAP = 50
-    local threadIdx = 0
-    for key, msgs in pairs(self.messages) do
+    local tIdx = 0
+    for key, msgs in pairs(messages or {}) do
         if #msgs > 0 then
-            local tKey = string.format("roleplayMessages.thread(%d)", threadIdx)
+            local tKey = string.format("roleplayData.messages.thread(%d)", tIdx)
             setXMLString(xmlFile, tKey .. "#key", tostring(key))
-            -- Save display info for unknown sender threads
-            local info = self.messageDisplayNames[key]
-            if info then
-                setXMLString(xmlFile, tKey .. "#displayName",  info.name   or "")
-                setXMLString(xmlFile, tKey .. "#displayPhone", info.phone  or "")
-                setXMLInt(xmlFile,    tKey .. "#displayUserId", info.userId or 0)
-            end
-            -- Cap to most recent 50
             local startIdx = math.max(1, #msgs - MESSAGE_CAP + 1)
-            local msgIdx = 0
+            local mIdx = 0
             for i = startIdx, #msgs do
                 local msg  = msgs[i]
-                local mKey = string.format("%s.msg(%d)", tKey, msgIdx)
+                local mKey = string.format("%s.msg(%d)", tKey, mIdx)
                 setXMLString(xmlFile, mKey .. "#text",       msg.text       or "")
                 setXMLBool(xmlFile,   mKey .. "#sent",       msg.sent       or false)
                 setXMLInt(xmlFile,    mKey .. "#gameDay",    msg.gameDay    or 0)
                 setXMLInt(xmlFile,    mKey .. "#gameTime",   msg.gameTime   or 0)
                 setXMLInt(xmlFile,    mKey .. "#fromUserId", msg.fromUserId or 0)
                 setXMLString(xmlFile, mKey .. "#senderName", msg.senderName or "")
-                msgIdx = msgIdx + 1
+                mIdx = mIdx + 1
             end
-            threadIdx = threadIdx + 1
+            tIdx = tIdx + 1
         end
     end
 
-    saveXMLFile(xmlFile); delete(xmlFile)
-    print(string.format("[RoleplayPhone] Messages saved: %d threads", threadIdx))
+    -- Call history
+    local CALL_CAP = 25
+    local entries  = callHistory or {}
+    local startIdx = math.max(1, #entries - CALL_CAP + 1)
+    local eIdx = 0
+    for i = startIdx, #entries do
+        local e    = entries[i]
+        local eKey = string.format("roleplayData.calls.entry(%d)", eIdx)
+        setXMLString(xmlFile, eKey .. "#name",      e.name      or "")
+        setXMLString(xmlFile, eKey .. "#phone",     e.phone     or "")
+        setXMLString(xmlFile, eKey .. "#direction", e.direction or "")
+        setXMLInt(xmlFile,    eKey .. "#gameDay",   e.gameDay   or 0)
+        setXMLInt(xmlFile,    eKey .. "#gameTime",  e.gameTime  or 0)
+        setXMLInt(xmlFile,    eKey .. "#count",     e.count     or 1)
+        eIdx = eIdx + 1
+    end
+
+    saveXMLFile(xmlFile)
+    delete(xmlFile)
+    print(string.format("[RoleplayPhone] Saved player data: %s (%d contacts, %d threads, %d calls)",
+        filename, cIdx, tIdx, eIdx))
 end
 
-function RoleplayPhone:loadMessages()
-    if not g_currentMission or not g_currentMission.missionInfo then return end
+-- Loads a player's data file. If isHost=true, populates runtime tables directly.
+-- Returns { contacts, messages, callHistory } for client push use.
+function RoleplayPhone:loadPlayerData(filename, isHost)
     local dir = self:getSaveDir()
-    if not dir then return end
-    local xmlFile = loadXMLFile("roleplayMessagesXML", dir .. "/roleplayMessages.xml")
+    if not dir then return nil end
+    local path    = dir .. "/" .. filename .. ".xml"
+    local xmlFile = loadXMLFile("roleplayPlayerXML", path)
     if not xmlFile or xmlFile == 0 then
-        print("[RoleplayPhone] No saved messages found (new save or first run)")
-        return
+        print("[RoleplayPhone] No player data found: " .. filename)
+        return nil
     end
 
-    self.messages            = {}
-    self.messageDisplayNames = {}
-    local threadIdx = 0
+    -- Contacts
+    local contacts = {}
+    local cIdx = 0
     while true do
-        local tKey = string.format("roleplayMessages.thread(%d)", threadIdx)
+        local cKey = string.format("roleplayData.contacts.contact(%d)", cIdx)
+        local name = getXMLString(xmlFile, cKey .. "#name")
+        if name == nil then break end
+        table.insert(contacts, {
+            name         = name,
+            farmName     = getXMLString(xmlFile, cKey .. "#farmName")     or "",
+            phone        = getXMLString(xmlFile, cKey .. "#phone")        or "",
+            notes        = getXMLString(xmlFile, cKey .. "#notes")        or "",
+            playerUserId = getXMLInt(xmlFile,    cKey .. "#playerUserId") or 0,
+        })
+        cIdx = cIdx + 1
+    end
+
+    -- Messages
+    local messages = {}
+    local tIdx = 0
+    while true do
+        local tKey = string.format("roleplayData.messages.thread(%d)", tIdx)
         local key  = getXMLString(xmlFile, tKey .. "#key")
         if key == nil then break end
-
-        -- Restore numeric keys as numbers, string keys stay strings
         local parsedKey = tonumber(key) or key
-        self.messages[parsedKey] = {}
-
-        -- Restore unknown sender display info if present
-        local displayName  = getXMLString(xmlFile, tKey .. "#displayName")
-        if displayName then
-            self.messageDisplayNames[parsedKey] = {
-                name   = displayName,
-                phone  = getXMLString(xmlFile, tKey .. "#displayPhone")  or "",
-                userId = getXMLInt(xmlFile,    tKey .. "#displayUserId") or 0,
-            }
-        end
-
-        local msgIdx = 0
+        messages[parsedKey] = {}
+        local mIdx = 0
         while true do
-            local mKey = string.format("%s.msg(%d)", tKey, msgIdx)
+            local mKey = string.format("%s.msg(%d)", tKey, mIdx)
             local text = getXMLString(xmlFile, mKey .. "#text")
             if text == nil then break end
-            table.insert(self.messages[parsedKey], {
+            table.insert(messages[parsedKey], {
                 text       = text,
                 sent       = getXMLBool(xmlFile,   mKey .. "#sent")       or false,
                 gameDay    = getXMLInt(xmlFile,    mKey .. "#gameDay")    or 0,
@@ -588,71 +631,46 @@ function RoleplayPhone:loadMessages()
                 fromUserId = getXMLInt(xmlFile,    mKey .. "#fromUserId") or 0,
                 senderName = getXMLString(xmlFile, mKey .. "#senderName") or "",
             })
-            msgIdx = msgIdx + 1
+            mIdx = mIdx + 1
         end
-        threadIdx = threadIdx + 1
+        tIdx = tIdx + 1
     end
 
-    delete(xmlFile)
-    print(string.format("[RoleplayPhone] Loaded messages: %d threads", threadIdx))
-end
-
-function RoleplayPhone:saveCallHistory()
-    if not g_currentMission or not g_currentMission.missionInfo then return end
-    local dir = self:getSaveDir()
-    if not dir then return end
-    local xmlFile = createXMLFile("roleplayCallsXML", dir .. "/roleplayCalls.xml", "roleplayCalls")
-    if xmlFile == 0 then return end
-
-    local CALL_CAP = 25
-    local entries = self.callHistory
-    local startIdx = math.max(1, #entries - CALL_CAP + 1)
-    local i = 0
-    for idx = startIdx, #entries do
-        local entry = entries[idx]
-        local cKey  = string.format("roleplayCalls.entry(%d)", i)
-        setXMLString(xmlFile, cKey .. "#name",      entry.name      or "")
-        setXMLString(xmlFile, cKey .. "#phone",     entry.phone     or "")
-        setXMLString(xmlFile, cKey .. "#direction", entry.direction or "")
-        setXMLInt(xmlFile,    cKey .. "#gameDay",   entry.gameDay   or 0)
-        setXMLInt(xmlFile,    cKey .. "#gameTime",  entry.gameTime  or 0)
-        setXMLInt(xmlFile,    cKey .. "#count",     entry.count     or 1)
-        i = i + 1
-    end
-
-    saveXMLFile(xmlFile); delete(xmlFile)
-    print(string.format("[RoleplayPhone] Call history saved: %d entries", i))
-end
-
-function RoleplayPhone:loadCallHistory()
-    if not g_currentMission or not g_currentMission.missionInfo then return end
-    local dir = self:getSaveDir()
-    if not dir then return end
-    local xmlFile = loadXMLFile("roleplayCallsXML", dir .. "/roleplayCalls.xml")
-    if not xmlFile or xmlFile == 0 then
-        print("[RoleplayPhone] No saved call history found (new save or first run)")
-        return
-    end
-
-    self.callHistory = {}
-    local i = 0
+    -- Call history
+    local callHistory = {}
+    local eIdx = 0
     while true do
-        local cKey = string.format("roleplayCalls.entry(%d)", i)
-        local name = getXMLString(xmlFile, cKey .. "#name")
+        local eKey = string.format("roleplayData.calls.entry(%d)", eIdx)
+        local name = getXMLString(xmlFile, eKey .. "#name")
         if name == nil then break end
-        table.insert(self.callHistory, {
+        table.insert(callHistory, {
             name      = name,
-            phone     = getXMLString(xmlFile, cKey .. "#phone")     or "",
-            direction = getXMLString(xmlFile, cKey .. "#direction") or "",
-            gameDay   = getXMLInt(xmlFile,    cKey .. "#gameDay")   or 0,
-            gameTime  = getXMLInt(xmlFile,    cKey .. "#gameTime")  or 0,
-            count     = getXMLInt(xmlFile,    cKey .. "#count")     or 1,
+            phone     = getXMLString(xmlFile, eKey .. "#phone")     or "",
+            direction = getXMLString(xmlFile, eKey .. "#direction") or "",
+            gameDay   = getXMLInt(xmlFile,    eKey .. "#gameDay")   or 0,
+            gameTime  = getXMLInt(xmlFile,    eKey .. "#gameTime")  or 0,
+            count     = getXMLInt(xmlFile,    eKey .. "#count")     or 1,
         })
-        i = i + 1
+        eIdx = eIdx + 1
     end
 
     delete(xmlFile)
-    print(string.format("[RoleplayPhone] Loaded call history: %d entries", i))
+    print(string.format("[RoleplayPhone] Loaded player data: %s (%d contacts, %d threads, %d calls)",
+        filename, #contacts, tIdx, #callHistory))
+
+    -- If loading for host, populate runtime tables directly
+    if isHost then
+        ContactManager.contacts = contacts
+        self.messages           = messages
+        self.callHistory        = callHistory
+        -- Bootstrap userContacts so the server can push host's contacts if asked
+        local hostUniqueId = self:getMyUniqueId()
+        local hostUserId   = self:getMyUserId()
+        local key = hostUniqueId ~= "" and hostUniqueId or tostring(hostUserId)
+        ContactManager.userContacts[key] = contacts
+    end
+
+    return { contacts = contacts, messages = messages, callHistory = callHistory }
 end
 
 -- ─── Main draw dispatcher ─────────────────────────────────────────────────────
@@ -785,13 +803,31 @@ end)
 Mission00.saveSavegame = Utils.appendedFunction(Mission00.saveSavegame,
     function(mission)
         if g_server ~= nil then
-            -- Server saves all shared + host-side state
             RoleplayPhone:saveInvoices()
-            RoleplayPhone:saveContacts()
-            RoleplayPhone:saveMessages()
-            RoleplayPhone:saveCallHistory()
+            -- Save host's own player data file
+            local hostUniqueId = RoleplayPhone:getMyUniqueId()
+            local hostNickname = (g_currentMission and g_currentMission.playerNickname) or "host"
+            local hostPhone    = RoleplayPhone:hashPhone(RoleplayPhone:getMyUserId())
+            local entry        = RoleplayPhone:getOrCreateRegistryEntry(hostUniqueId, hostPhone)
+            local filename     = RoleplayPhone:buildPlayerFilename(hostNickname, entry.fileId)
+            RoleplayPhone:savePlayerData(filename,
+                ContactManager.contacts,
+                RoleplayPhone.messages,
+                RoleplayPhone.callHistory)
+            -- Save each connected client's data file
+            for userId, info in pairs(RoleplayPhone.onlineUsers) do
+                if userId ~= RoleplayPhone:getMyUserId() and info.uniqueId and info.uniqueId ~= "" then
+                    local clientEntry    = RoleplayPhone:getOrCreateRegistryEntry(info.uniqueId, info.phone)
+                    local clientFilename = RoleplayPhone:buildPlayerFilename(info.name, clientEntry.fileId)
+                    local clientKey      = info.uniqueId
+                    local clientContacts = ContactManager.userContacts[clientKey] or {}
+                    -- Client messages and calls are stored server-side under their uniqueId key
+                    local clientMessages = RoleplayPhone.playerMessages and RoleplayPhone.playerMessages[clientKey] or {}
+                    local clientCalls    = RoleplayPhone.playerCalls    and RoleplayPhone.playerCalls[clientKey]    or {}
+                    RoleplayPhone:savePlayerData(clientFilename, clientContacts, clientMessages, clientCalls)
+                end
+            end
         end
-        -- Messages and call history are saved via saveToXMLFile (fires for all players)
     end
 )
 
@@ -835,78 +871,8 @@ Mission00.onConnectionFinishedLoading = Utils.appendedFunction(
             print("[RoleplayPhone] Sent weather forecast to new client")
         end
 
-        -- Find connecting user's userId from connectionsToPlayer
-        local connectingUserId = 0
-        if g_currentMission and g_currentMission.connectionsToPlayer then
-            for conn, player in pairs(g_currentMission.connectionsToPlayer) do
-                if conn == connection then connectingUserId = player.userId; break end
-            end
-        end
-
-        if connectingUserId ~= 0 then
-            -- Push contacts — use uniqueId as stable key if available
-            local connInfo           = RoleplayPhone.onlineUsers[connectingUserId]
-            local connectingUniqueId = connInfo and connInfo.uniqueId or ""
-            local connectingPhone    = connInfo and connInfo.phone    or ""
-            local contactKey         = connectingUniqueId ~= "" and connectingUniqueId or tostring(connectingUserId)
-            local userContacts       = ContactManager.userContacts[contactKey] or {}
-            connection:sendEvent(RI_ContactSyncEvent.new(userContacts))
-            print(string.format("[RoleplayPhone] Pushed %d contacts to userId %d", #userContacts, connectingUserId))
-
-            -- Sync this client's message threads
-            local hostUserId = RoleplayPhone:getMyUserId()
-            local msgsToSend = {}
-            for key, msgs in pairs(RoleplayPhone.messages) do
-                local belongs = (key == "u_" .. tostring(connectingUserId))
-                    or (connectingUniqueId ~= "" and key == "u_" .. connectingUniqueId)
-                if not belongs and type(key) == "number" then
-                    local c = ContactManager.contacts[key]
-                    -- Match by playerUserId OR by phone (phone is stable across sessions)
-                    if c and (c.playerUserId == connectingUserId
-                        or (connectingPhone ~= "" and c.phone == connectingPhone)) then
-                        belongs = true
-                    end
-                end
-                if not belongs then
-                    for _, msg in ipairs(msgs) do
-                        if msg.fromUserId == connectingUserId then belongs = true; break end
-                    end
-                end
-
-                if belongs then
-                    for _, msg in ipairs(msgs) do
-                        local toUserId = msg.sent and connectingUserId or hostUserId
-                        table.insert(msgsToSend, {
-                            fromUserId = msg.fromUserId,
-                            toUserId   = toUserId,
-                            senderName = msg.senderName,
-                            text       = msg.text,
-                            gameDay    = msg.gameDay,
-                            gameTime   = msg.gameTime,
-                        })
-                    end
-                end
-            end
-
-            if #msgsToSend > 0 then
-                connection:sendEvent(RI_MessageSyncEvent.new(msgsToSend))
-                print(string.format("[RoleplayPhone] Sent %d messages to userId %d", #msgsToSend, connectingUserId))
-            end
-
-            -- Sync call history entries involving this user
-            if connectingPhone ~= "" then
-                local relevantCalls = {}
-                for _, e in ipairs(RoleplayPhone.callHistory) do
-                    if e.phone == connectingPhone then
-                        table.insert(relevantCalls, e)
-                    end
-                end
-                if #relevantCalls > 0 then
-                    connection:sendEvent(RI_CallHistorySyncEvent.new(relevantCalls))
-                    print(string.format("[RoleplayPhone] Sent %d call history entries to userId %d", #relevantCalls, connectingUserId))
-                end
-            end
-        end
+        -- Contacts, messages, and call history are pushed in RI_PlayerHelloEvent:run()
+        -- once the player's identity (uniqueId) is known.
     end
 )
 
@@ -919,25 +885,30 @@ Mission00.update = Utils.appendedFunction(Mission00.update, function(mission, dt
     if RoleplayPhone._cleanupTimer < 5000 then return end
     RoleplayPhone._cleanupTimer = 0
 
-    if not (g_currentMission and g_currentMission.connectionsToPlayer) then return end
+    local ps = g_currentMission and g_currentMission.playerSystem
+    if not ps then return end
 
     local myUserId = RoleplayPhone:getMyUserId()
     local toRemove = {}
     for userId, _ in pairs(RoleplayPhone.onlineUsers) do
         if userId ~= myUserId then
-            local stillConnected = false
-            for _, player in pairs(g_currentMission.connectionsToPlayer) do
-                if player.userId == userId then
-                    stillConnected = true
-                    break
-                end
-            end
-            if not stillConnected then
+            if not ps:getPlayerByUserId(userId) then
                 table.insert(toRemove, userId)
             end
         end
     end
     for _, userId in ipairs(toRemove) do
+        local info = RoleplayPhone.onlineUsers[userId]
+        if info and info.uniqueId and info.uniqueId ~= "" then
+            local clientEntry    = RoleplayPhone:getOrCreateRegistryEntry(info.uniqueId, info.phone)
+            local clientFilename = RoleplayPhone:buildPlayerFilename(info.name, clientEntry.fileId)
+            local clientKey      = info.uniqueId
+            local clientContacts = ContactManager.userContacts[clientKey] or {}
+            local clientMessages = RoleplayPhone.playerMessages and RoleplayPhone.playerMessages[clientKey] or {}
+            local clientCalls    = RoleplayPhone.playerCalls    and RoleplayPhone.playerCalls[clientKey]    or {}
+            RoleplayPhone:savePlayerData(clientFilename, clientContacts, clientMessages, clientCalls)
+            print(string.format("[RoleplayPhone] Saved data on disconnect: %s", info.name or tostring(userId)))
+        end
         print(string.format("[RoleplayPhone] Removed stale onlineUser: %s", tostring(userId)))
         RoleplayPhone.onlineUsers[userId] = nil
     end

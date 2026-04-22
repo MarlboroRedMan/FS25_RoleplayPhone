@@ -70,6 +70,15 @@ function RoleplayPhone:getMyUniqueId()
     return ""
 end
 
+-- Returns the saved contact name for a given phone number, or nil if not in contacts.
+function RoleplayPhone:getContactNameByPhone(phone)
+    if not phone or phone == "" then return nil end
+    for _, c in ipairs(ContactManager.contacts) do
+        if c.phone == phone then return c.name end
+    end
+    return nil
+end
+
 -- PHONE_FORMATS keyed by mapId.
 -- digits = total digit count that hashPhone generates (no dashes).
 -- format = how to display those digits (X = digit placeholder).
@@ -391,4 +400,119 @@ function RoleplayPhone:getCallActionKeyName()
     end
     delete(xmlFile)
     return result
+end
+
+-- ─── Player file helpers ──────────────────────────────────────────────────────
+
+-- Strips any character that isn't alphanumeric or underscore.
+-- Used for both nickname and uniqueId snippet in filenames.
+function RoleplayPhone:sanitizeForFilename(str)
+    if not str or str == "" then return "unknown" end
+    local result = str:gsub("[^%w_]", "")
+    if result == "" then result = "unknown" end
+    return result
+end
+
+-- Builds the fileId — first 8 alphanumeric chars of uniqueId.
+-- If that collides with an existing different player, walks further along uniqueId.
+function RoleplayPhone:buildFileId(uniqueId, existingRegistry)
+    local stripped = uniqueId:gsub("[^%w]", "")
+    local fileId = stripped:sub(1, 8)
+    if fileId == "" then fileId = "00000000" end
+
+    -- Check for collision with a different uniqueId already in registry
+    if existingRegistry then
+        local offset = 9
+        while true do
+            local collision = false
+            for _, entry in ipairs(existingRegistry) do
+                if entry.fileId == fileId and entry.uniqueId ~= uniqueId then
+                    collision = true
+                    break
+                end
+            end
+            if not collision then break end
+            -- Try next 8 chars
+            fileId = stripped:sub(offset, offset + 7)
+            if fileId == "" then fileId = stripped:sub(1, 8) .. tostring(offset); break end
+            offset = offset + 8
+        end
+    end
+
+    return fileId
+end
+
+-- Builds the full filename (without extension) for a player's data file.
+-- Format: roleplay_<nickname>_<fileId>
+function RoleplayPhone:buildPlayerFilename(nickname, fileId)
+    local safeName = self:sanitizeForFilename(nickname)
+    if #safeName > 16 then safeName = safeName:sub(1, 16) end
+    return "roleplay_" .. safeName .. "_" .. fileId
+end
+
+-- ─── Player registry (roleplayers.xml) ───────────────────────────────────────
+
+-- Loads the registry and returns it as a table of entries.
+-- Each entry: { uniqueId, fileId, phone }
+function RoleplayPhone:loadPlayerRegistry()
+    local dir = self:getSaveDir()
+    if not dir then return {} end
+    local xmlFile = loadXMLFile("roleplayRegistryXML", dir .. "/roleplayers.xml")
+    if not xmlFile or xmlFile == 0 then return {} end
+
+    local registry = {}
+    local i = 0
+    while true do
+        local key = string.format("roleplayers.player(%d)", i)
+        local uniqueId = getXMLString(xmlFile, key .. "#uniqueId")
+        if uniqueId == nil then break end
+        table.insert(registry, {
+            uniqueId = uniqueId,
+            fileId   = getXMLString(xmlFile, key .. "#fileId") or "",
+            phone    = getXMLString(xmlFile, key .. "#phone")  or "",
+        })
+        i = i + 1
+    end
+    delete(xmlFile)
+    return registry
+end
+
+-- Saves the registry table back to roleplayers.xml.
+function RoleplayPhone:savePlayerRegistry(registry)
+    local dir = self:getSaveDir()
+    if not dir then return end
+    local xmlFile = createXMLFile("roleplayRegistryXML", dir .. "/roleplayers.xml", "roleplayers")
+    if not xmlFile or xmlFile == 0 then return end
+
+    for i, entry in ipairs(registry) do
+        local key = string.format("roleplayers.player(%d)", i - 1)
+        setXMLString(xmlFile, key .. "#uniqueId", entry.uniqueId or "")
+        setXMLString(xmlFile, key .. "#fileId",   entry.fileId   or "")
+        setXMLString(xmlFile, key .. "#phone",    entry.phone    or "")
+    end
+    saveXMLFile(xmlFile)
+    delete(xmlFile)
+end
+
+-- Finds or creates a registry entry for a player.
+-- Returns the entry (with fileId guaranteed to be set).
+function RoleplayPhone:getOrCreateRegistryEntry(uniqueId, phone)
+    local registry = self:loadPlayerRegistry()
+
+    -- Look for existing entry by uniqueId
+    for _, entry in ipairs(registry) do
+        if entry.uniqueId == uniqueId then
+            -- Update phone if changed
+            if phone and phone ~= "" then entry.phone = phone end
+            self:savePlayerRegistry(registry)
+            return entry
+        end
+    end
+
+    -- New player — build their fileId
+    local fileId = self:buildFileId(uniqueId, registry)
+    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "" }
+    table.insert(registry, entry)
+    self:savePlayerRegistry(registry)
+    return entry
 end

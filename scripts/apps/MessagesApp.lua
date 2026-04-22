@@ -82,23 +82,8 @@ function RoleplayPhone:drawMessages()
             self:drawRect(px, rowY - rowH, 0.004, rowH, 0.20, 0.65, 0.95, 1.0)
         end
 
-        -- Avatar
-        local avSize = 0.034
-        local avX    = px + 0.012
-        local avY    = rowY - rowH + (rowH - avSize) / 2
-        local avR, avG, avB = thread.unread > 0 and 0.10 or 0.15,
-                               thread.unread > 0 and 0.40 or 0.32,
-                               thread.unread > 0 and 0.72 or 0.60
-        self:drawRect(avX, avY, avSize, avSize, avR, avG, avB, 1.0)
-        setTextAlignment(RenderText.ALIGN_CENTER)
-        setTextBold(true)
-        setTextColor(1, 1, 1, 1)
-        local initial = string.upper(string.sub(thread.contact.name or "?", 1, 1))
-        if tonumber(initial) then initial = "?" end
-        renderText(avX + avSize / 2, avY + avSize * 0.20, 0.018, initial)
-
         -- Contact name (bold if unread)
-        local textX = avX + avSize + 0.012
+        local textX = px + 0.012
         setTextAlignment(RenderText.ALIGN_LEFT)
         setTextBold(thread.unread > 0)
         setTextColor(thread.unread > 0 and 1.0 or 0.80,
@@ -118,10 +103,23 @@ function RoleplayPhone:drawMessages()
             renderText(textX, rowY - rowH + rowH * 0.22, 0.010, preview)
         end
 
-        -- Unread badge OR chevron (right side)
+        -- Delete thread button (far right)
+        local delW = 0.016 * self.arScale
+        local delH = 0.026
+        local delX = px + pw - delW - 0.006
+        local delY = rowY - rowH + (rowH - delH) / 2
+        self:drawRect(delX, delY, delW, delH, 0.38, 0.08, 0.08, 0.80)
+        setTextAlignment(RenderText.ALIGN_CENTER)
+        setTextBold(true)
+        setTextColor(1, 0.50, 0.50, 1)
+        renderText(delX + delW / 2, delY + delH * 0.18, 0.009, "X")
+        self:addHitbox("msg_delete_thread", delX, delY, delW, delH, { index = thread.index })
+
+        -- Unread badge OR chevron (right of content, left of delete button)
+        local badgeEdge = delX - 0.006
         if thread.unread > 0 then
             local bsz = 0.018
-            local bx  = px + pw - bsz - 0.012
+            local bx  = badgeEdge - bsz
             local by  = rowY - rowH + (rowH - bsz) / 2
             self:drawRect(bx, by, bsz, bsz, 0.15, 0.55, 0.90, 1.0)
             setTextAlignment(RenderText.ALIGN_CENTER)
@@ -133,7 +131,7 @@ function RoleplayPhone:drawMessages()
         else
             setTextAlignment(RenderText.ALIGN_RIGHT)
             setTextColor(0.35, 0.38, 0.50, 0.5)
-            renderText(px + pw - 0.010, rowY - rowH + rowH * 0.38, 0.013, ">")
+            renderText(badgeEdge, rowY - rowH + rowH * 0.38, 0.013, ">")
         end
 
         self:addHitbox("msg_thread_row", px, rowY - rowH, pw, rowH, { index = thread.index })
@@ -155,8 +153,10 @@ function RoleplayPhone:drawMessageThread()
     if isUnknown then
         local info = self.messageDisplayNames[self.selectedContact]
         if not info then self.state = self.STATE.MESSAGES; return end
-        -- Show phone number if we have it, otherwise fall back to sender name
-        headerName = (info.phone and info.phone ~= "") and info.phone or info.name
+        -- Use saved contact name if available, then phone, then raw nickname
+        headerName = self:getContactNameByPhone(info.phone)
+                  or (info.phone and info.phone ~= "" and info.phone)
+                  or info.name
         c          = { name = headerName, phone = info.phone or "" }
         isContact  = false
     else
@@ -244,6 +244,12 @@ function RoleplayPhone:drawMessageThread()
     self:drawRect(px, threadBot, pw, 0.001, 0.12, 0.14, 0.20, 0.4)
 
     local msgs = self.messages[self.selectedContact] or {}
+    if #msgs > 1 then
+        table.sort(msgs, function(a, b)
+            if a.gameDay ~= b.gameDay then return a.gameDay < b.gameDay end
+            return (a.gameTime or 0) < (b.gameTime or 0)
+        end)
+    end
 
     if #msgs == 0 then
         setTextAlignment(RenderText.ALIGN_CENTER)

@@ -24,16 +24,19 @@ Built for serious RP communities that want a real in-game economy and communicat
 - Full multiplayer sync — all players see the same invoice state
 
 ### 📇 Contacts
-- Add contacts by selecting online players — phone number and routing auto-filled
+- Add contacts manually (name, phone, notes) or via contact card sharing in Messages
 - Contact detail with Call and Message deep-link buttons
 - Per-player contact lists, synced to host and pushed to clients on reconnect
+- My Profile section shows your own name and phone number
 
 ### 📞 Calls
 - Tabbed Calls app: Keypad / Recents / Contacts
 - Dial by number on the keypad — click buttons or type on keyboard/numpad
 - Call any saved contact directly from the Contacts tab
 - Call back from Recents with one tap
+- Clear all call history with one tap
 - F8 keybind to answer or hang up (works on foot and in vehicles, remappable)
+- Works correctly whether phone is open or closed when call comes in
 - Ringback tone for caller, ringtone for recipient
 - Busy signal when player is offline or unavailable
 - 30-second auto-timeout on unanswered calls
@@ -44,7 +47,9 @@ Built for serious RP communities that want a real in-game economy and communicat
 - Per-contact message threads with full history
 - Keyboard input — type naturally, Enter to send
 - Unread message badge on Messages dock icon
+- Delete individual message threads
 - Message history persists across sessions and syncs to clients on reconnect
+- Share your contact card via Messages — recipient can save with one tap
 
 ### 🌤️ Weather App
 - Current conditions: temperature, condition, wind, cloud cover

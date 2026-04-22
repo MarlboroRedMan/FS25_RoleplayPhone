@@ -59,18 +59,7 @@ function RI_PlayerHelloEvent:run(connection)
             connection = connection,
         }
 
-        -- Ensure userContacts is keyed by uniqueId for persistence across sessions.
-        -- Migrate from any old userId-keyed entry if needed.
-        if self.uniqueId ~= "" then
-            if not ContactManager.userContacts[self.uniqueId] then
-                ContactManager.userContacts[self.uniqueId] =
-                    ContactManager.userContacts[self.playerUserId] or {}
-                ContactManager.userContacts[self.playerUserId] = nil
-            end
-        end
-
-        -- Update playerUserId in any contact entries that reference this player
-        -- by phone — handles contacts saved from a previous session with a stale userId
+        -- Update playerUserId in any contact entries that reference this player by phone
         if self.phoneNumber ~= "" then
             local function updateUserId(list)
                 for _, c in ipairs(list) do
@@ -90,6 +79,51 @@ function RI_PlayerHelloEvent:run(connection)
             RI_PlayerHelloEvent.new(self.playerUserId, self.farmId,
                                     self.playerName, self.phoneNumber, self.uniqueId),
             false, connection)
+
+        -- Load this player's per-player data file and push everything to them at once
+        if self.uniqueId ~= "" then
+            local entry    = RoleplayPhone:getOrCreateRegistryEntry(self.uniqueId, self.phoneNumber)
+            local filename = RoleplayPhone:buildPlayerFilename(self.playerName, entry.fileId)
+            local data     = RoleplayPhone:loadPlayerData(filename, false)
+            if data then
+                -- Store client data server-side for saving later
+                RoleplayPhone.playerMessages[self.uniqueId] = data.messages
+                RoleplayPhone.playerCalls[self.uniqueId]    = data.callHistory
+                -- Push contacts
+                ContactManager.userContacts[self.uniqueId]  = data.contacts
+                connection:sendEvent(RI_ContactSyncEvent.new(data.contacts))
+                -- Push messages
+                local msgsToSend = {}
+                for key, msgs in pairs(data.messages) do
+                    for _, msg in ipairs(msgs) do
+                        table.insert(msgsToSend, {
+                            fromUserId = msg.fromUserId,
+                            toUserId   = msg.sent and RoleplayPhone:getMyUserId() or self.playerUserId,
+                            senderName = msg.senderName,
+                            text       = msg.text,
+                            gameDay    = msg.gameDay,
+                            gameTime   = msg.gameTime,
+                            sent       = msg.sent,
+                        })
+                    end
+                end
+                if #msgsToSend > 0 then
+                    connection:sendEvent(RI_MessageSyncEvent.new(msgsToSend))
+                end
+                -- Push call history
+                if #data.callHistory > 0 then
+                    connection:sendEvent(RI_CallHistorySyncEvent.new(data.callHistory))
+                end
+                print(string.format("[RoleplayPhone] Pushed player data to %s: %d contacts, %d msgs, %d calls",
+                    self.playerName, #data.contacts, #msgsToSend, #data.callHistory))
+            else
+                -- New player — no file yet, send empty contacts
+                ContactManager.userContacts[self.uniqueId] = {}
+                connection:sendEvent(RI_ContactSyncEvent.new({}))
+                print(string.format("[RoleplayPhone] New player %s — no data file yet", self.playerName))
+            end
+        end
+
         print(string.format("[RoleplayPhone] PlayerHello: %s (userId=%d farmId=%d phone=%s)",
             self.playerName, self.playerUserId, self.farmId, self.phoneNumber))
         return
@@ -384,20 +418,40 @@ function RI_MessageEvent:run(connection)
     -- Server: route directly to recipient instead of broadcasting to everyone
     if g_server ~= nil and connection ~= nil and not connection:getIsServer() then
         local myUserId = RoleplayPhone:getMyUserId()
+
+        -- Store message server-side for both sender and recipient so it saves to their files
+        local function storeForPlayer(uniqueId, key, msgEntry)
+            if not uniqueId or uniqueId == "" then return end
+            if not RoleplayPhone.playerMessages[uniqueId] then
+                RoleplayPhone.playerMessages[uniqueId] = {}
+            end
+            if not RoleplayPhone.playerMessages[uniqueId][key] then
+                RoleplayPhone.playerMessages[uniqueId][key] = {}
+            end
+            table.insert(RoleplayPhone.playerMessages[uniqueId][key], msgEntry)
+        end
+
+        local senderInfo        = RoleplayPhone.onlineUsers[self.fromUserId]
+        local senderUniqueId    = senderInfo    and senderInfo.uniqueId    or ""
+        local recipientInfo     = RoleplayPhone.onlineUsers[self.toUserId]
+        local recipientUniqueId = recipientInfo and recipientInfo.uniqueId or ""
+        -- Store as "sent" in sender's file, "received" in recipient's file
+        local sentEntry     = { fromUserId=self.fromUserId, senderName=self.senderName, text=self.text, gameDay=self.gameDay, gameTime=self.gameTime, sent=true  }
+        local receivedEntry = { fromUserId=self.fromUserId, senderName=self.senderName, text=self.text, gameDay=self.gameDay, gameTime=self.gameTime, sent=false }
+        storeForPlayer(senderUniqueId,    "out_" .. (recipientUniqueId ~= "" and recipientUniqueId or tostring(self.toUserId)),   sentEntry)
+        storeForPlayer(recipientUniqueId, "in_"  .. (senderUniqueId    ~= "" and senderUniqueId    or tostring(self.fromUserId)), receivedEntry)
+
         if self.toUserId ~= myUserId then
             -- Recipient is another client — find their connection and send directly
-            local recipientConn = nil
-            if g_currentMission and g_currentMission.connectionsToPlayer then
-                for conn, player in pairs(g_currentMission.connectionsToPlayer) do
-                    if player.userId == self.toUserId then recipientConn = conn; break end
-                end
-            end
+            local ps = g_currentMission and g_currentMission.playerSystem
+            local recipientPlayer = ps and ps:getPlayerByUserId(self.toUserId)
+            local recipientConn = recipientPlayer and recipientPlayer.connection
             if recipientConn then
                 recipientConn:sendEvent(RI_MessageEvent.new(
                     self.fromUserId, self.toUserId,
                     self.senderName, self.text, self.gameDay, self.gameTime))
             end
-            return  -- Server doesn't need to store this message
+            return  -- Server doesn't need to store this message locally
         end
         -- Message is for the server host — fall through to receive it locally
     end
@@ -495,6 +549,7 @@ function RI_MessageSyncEvent:writeStream(streamId, connection)
         streamWriteString(streamId, m.text       or "")
         streamWriteInt32(streamId,  m.gameDay    or 0)
         streamWriteInt32(streamId,  m.gameTime   or 0)
+        streamWriteBool(streamId,   m.sent       or false)
     end
 end
 
@@ -509,6 +564,7 @@ function RI_MessageSyncEvent:readStream(streamId, connection)
             text       = streamReadString(streamId),
             gameDay    = streamReadInt32(streamId),
             gameTime   = streamReadInt32(streamId),
+            sent       = streamReadBool(streamId),
         })
     end
     self:run(connection)
@@ -516,11 +572,12 @@ end
 
 function RI_MessageSyncEvent:run(connection)
     if g_server ~= nil then return end  -- only clients process this
+    RoleplayPhone.isSyncing = true
     local myUserId = RoleplayPhone:getMyUserId()
     local contacts = ContactManager.contacts or {}
 
     for _, m in ipairs(self.msgs) do
-        local isSent      = (m.fromUserId == myUserId)
+        local isSent      = m.sent
         local otherUserId = isSent and m.toUserId or m.fromUserId
 
         -- Find contact key for the other person
@@ -545,6 +602,7 @@ function RI_MessageSyncEvent:run(connection)
         RoleplayPhone:receiveMessage(key, m.fromUserId, m.senderName,
                                      m.text, m.gameDay, isSent, m.gameTime)
     end
+    RoleplayPhone.isSyncing = false
     print(string.format("[RoleplayPhone] Message sync received: %d messages", #self.msgs))
 end
 
@@ -731,6 +789,31 @@ function RI_CallEvent:run(connection)
             RI_CallEvent.new(self.callType, self.fromUserId, self.toUserId,
                              self.callerName, self.callerNum),
             false, connection)
+
+        -- Store outgoing call in caller's playerCalls so it saves to their file
+        if self.callType == "ring" then
+            local callerInfo     = RoleplayPhone.onlineUsers[self.fromUserId]
+            local callerUniqueId = callerInfo and callerInfo.uniqueId or ""
+            if callerUniqueId ~= "" then
+                if not RoleplayPhone.playerCalls[callerUniqueId] then
+                    RoleplayPhone.playerCalls[callerUniqueId] = {}
+                end
+                -- Store the name of who was called (toUserId), not the caller's own name
+                local recipientInfo = RoleplayPhone.onlineUsers[self.toUserId]
+                local recipientName = recipientInfo and recipientInfo.name or self.callerNum or ""
+                local recipientPhone = recipientInfo and recipientInfo.phone or self.callerNum or ""
+                local gameDay  = (g_currentMission and g_currentMission.environment and g_currentMission.environment.currentDay) or 0
+                local gameTime = (g_currentMission and g_currentMission.environment and g_currentMission.environment.dayTime)    or 0
+                table.insert(RoleplayPhone.playerCalls[callerUniqueId], 1, {
+                    direction = "outgoing",
+                    name      = recipientName,
+                    phone     = recipientPhone,
+                    gameDay   = gameDay,
+                    gameTime  = gameTime,
+                    count     = 1,
+                })
+            end
+        end
     end
 
     local myUserId = RoleplayPhone:getMyUserId()
@@ -801,24 +884,17 @@ function RI_ContactEvent:readStream(streamId, connection)
 end
 
 function RI_ContactEvent:run(connection)
-    if self.action == "request" then
-        -- Client is asking for their saved contacts — only server handles this
-        if g_server == nil then return end
-        local list = ContactManager.userContacts[self.playerUserId] or {}
-        connection:sendEvent(RI_ContactSyncEvent.new(list))
-        print(string.format("[InvoiceEvents] Contact request from userId %d — sending %d contacts",
-            self.playerUserId, #list))
-        return
-    end
-
     -- Only the server persists contact changes
     if g_server == nil then return end
 
-    local userId = self.playerUserId
-    if not ContactManager.userContacts[userId] then
-        ContactManager.userContacts[userId] = {}
+    local userId   = self.playerUserId
+    local info     = RoleplayPhone.onlineUsers[userId]
+    local uniqueId = info and info.uniqueId or ""
+    local storageKey = uniqueId ~= "" and uniqueId or tostring(userId)
+    if not ContactManager.userContacts[storageKey] then
+        ContactManager.userContacts[storageKey] = {}
     end
-    local list = ContactManager.userContacts[userId]
+    local list = ContactManager.userContacts[storageKey]
 
     if self.action == "add" then
         table.insert(list, {
@@ -838,7 +914,14 @@ function RI_ContactEvent:run(connection)
         end
     end
 
-    RoleplayPhone:saveContacts()
+    -- Save to this player's per-player file immediately
+    if uniqueId ~= "" then
+        local entry    = RoleplayPhone:getOrCreateRegistryEntry(uniqueId, info and info.phone or "")
+        local filename = RoleplayPhone:buildPlayerFilename(info and info.name or "unknown", entry.fileId)
+        local msgs     = RoleplayPhone.playerMessages and RoleplayPhone.playerMessages[uniqueId] or {}
+        local calls    = RoleplayPhone.playerCalls    and RoleplayPhone.playerCalls[uniqueId]    or {}
+        RoleplayPhone:savePlayerData(filename, list, msgs, calls)
+    end
 end
 
 InvoiceEvents.ContactEvent = RI_ContactEvent
@@ -1024,3 +1107,84 @@ function RI_CallHistorySyncEvent:run(connection)
 end
 
 InvoiceEvents.CallHistorySyncEvent = RI_CallHistorySyncEvent
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- EVENT: DeleteThread — client asks server to remove a message thread from the
+-- server-side playerMessages copy so it does not sync back on reconnect.
+-- Payload: otherPhone (string) — phone of the other party in the thread
+-- ─────────────────────────────────────────────────────────────────────────────
+
+if RI_DeleteThreadEvent == nil then
+    RI_DeleteThreadEvent    = {}
+    RI_DeleteThreadEvent_mt = Class(RI_DeleteThreadEvent, Event)
+    InitEventClass(RI_DeleteThreadEvent, "RI_DeleteThreadEvent")
+end
+
+function RI_DeleteThreadEvent.emptyNew()
+    return Event.new(RI_DeleteThreadEvent_mt)
+end
+
+function RI_DeleteThreadEvent.new(otherPhone)
+    local self = RI_DeleteThreadEvent.emptyNew()
+    self.otherPhone = otherPhone or ""
+    return self
+end
+
+function RI_DeleteThreadEvent:writeStream(streamId, connection)
+    streamWriteString(streamId, self.otherPhone)
+end
+
+function RI_DeleteThreadEvent:readStream(streamId, connection)
+    self.otherPhone = streamReadString(streamId)
+    self:run(connection)
+end
+
+function RI_DeleteThreadEvent:run(connection)
+    if g_server == nil then return end  -- server only
+
+    -- Identify requesting client via PlayerSystem
+    local ps           = g_currentMission and g_currentMission.playerSystem
+    local clientPlayer = ps and ps:getPlayerByConnection(connection)
+    local clientUserId = clientPlayer and clientPlayer.userId
+    if not clientUserId then
+        print("[RoleplayPhone] DeleteThread: could not identify client connection"); return
+    end
+
+    local info           = RoleplayPhone.onlineUsers[clientUserId]
+    local clientUniqueId = info and info.uniqueId or ""
+    if clientUniqueId == "" then
+        print("[RoleplayPhone] DeleteThread: uniqueId not found for userId " .. tostring(clientUserId)); return
+    end
+
+    -- Look up other party's uniqueId from player registry by phone
+    local otherUniqueId = ""
+    local registry = RoleplayPhone:loadPlayerRegistry()
+    for _, entry in ipairs(registry) do
+        if entry.phone == self.otherPhone then
+            otherUniqueId = entry.uniqueId or ""; break
+        end
+    end
+    if otherUniqueId == "" then
+        print("[RoleplayPhone] DeleteThread: phone not in registry: " .. self.otherPhone); return
+    end
+
+    -- Remove both directions of the thread
+    local threadData = RoleplayPhone.playerMessages[clientUniqueId]
+    if threadData then
+        threadData["out_" .. otherUniqueId] = nil
+        threadData["in_"  .. otherUniqueId] = nil
+    end
+
+    -- Save updated client file
+    local clientEntry    = RoleplayPhone:getOrCreateRegistryEntry(clientUniqueId, info.phone or "")
+    local clientFilename = RoleplayPhone:buildPlayerFilename(info.name or "player", clientEntry.fileId)
+    local clientContacts = ContactManager.userContacts[clientUniqueId] or {}
+    local clientMessages = RoleplayPhone.playerMessages[clientUniqueId] or {}
+    local clientCalls    = RoleplayPhone.playerCalls and RoleplayPhone.playerCalls[clientUniqueId] or {}
+    RoleplayPhone:savePlayerData(clientFilename, clientContacts, clientMessages, clientCalls)
+
+    print(string.format("[RoleplayPhone] DeleteThread: cleared thread for client %.8s", clientUniqueId))
+end
+
+InvoiceEvents.DeleteThreadEvent = RI_DeleteThreadEvent

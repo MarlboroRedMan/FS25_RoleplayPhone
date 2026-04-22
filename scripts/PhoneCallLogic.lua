@@ -23,6 +23,44 @@ function RoleplayPhone:addCallHistoryEntry(direction, name, phone)
             count     = 1,
         })
     end
+
+    -- Host: mirror this entry into the other party's playerCalls so it syncs on their reconnect
+    if g_server ~= nil and phone and phone ~= "" then
+        local otherUniqueId = nil
+        for _, info in pairs(self.onlineUsers) do
+            if info.phone == phone and info.uniqueId and info.uniqueId ~= "" then
+                otherUniqueId = info.uniqueId; break
+            end
+        end
+        if otherUniqueId then
+            if not self.playerCalls[otherUniqueId] then
+                self.playerCalls[otherUniqueId] = {}
+            end
+            -- Mirror direction from the other party's perspective
+            local mirrorDir = direction
+            if     direction == "incoming" then mirrorDir = "outgoing"
+            elseif direction == "outgoing" then mirrorDir = "incoming"
+            elseif direction == "missed"   then mirrorDir = "outgoing"
+            end
+            local myName = (g_currentMission and g_currentMission.playerNickname) or ""
+            local myPhone = self:hashPhone(self:getMyUserId())
+            local otherTop = self.playerCalls[otherUniqueId][1]
+            if otherTop and otherTop.phone == myPhone and otherTop.direction == mirrorDir then
+                otherTop.count   = (otherTop.count or 1) + 1
+                otherTop.gameDay  = gameDay
+                otherTop.gameTime = gameTime
+            else
+                table.insert(self.playerCalls[otherUniqueId], 1, {
+                    direction = mirrorDir,
+                    name      = myName,
+                    phone     = myPhone,
+                    gameDay   = gameDay,
+                    gameTime  = gameTime,
+                    count     = 1,
+                })
+            end
+        end
+    end
 end
 
 function RoleplayPhone:startCall()
@@ -53,7 +91,8 @@ function RoleplayPhone:startCall()
     if self.flashlightBlockerId then g_inputBinding:removeActionEvent(self.flashlightBlockerId); self.flashlightBlockerId = nil end
     if g_localPlayer and g_localPlayer.inputComponent then g_localPlayer.inputComponent.locked = false end
     g_inputBinding:revertContext(true)
-    local evt = RI_CallEvent.new("ring", myUserId, toUserId, myName, "")
+    local myPhone = self:hashPhone(myUserId)
+    local evt = RI_CallEvent.new("ring", myUserId, toUserId, myName, myPhone)
     if g_server ~= nil then g_server:broadcastEvent(evt) elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
     if self.ringbackSample and self.ringbackSample ~= 0 then playSample(self.ringbackSample, 0, 1.0, 1.0, 0, 0) end
     print(string.format("[RoleplayPhone] Calling userId %d (%s)...", toUserId, c.name or "?"))
@@ -77,6 +116,16 @@ function RoleplayPhone:onIncomingCall(fromUserId, callerName, callerNum)
     self.call.fromUserId = fromUserId; self.call.toUserId = self:getMyUserId()
     self.call.startTime = 0; self.call.prevState = self.state
     self.state = self.STATE.CALL_INCOMING; self.callRingTimer = 0
+    -- If phone is already open, RI_CALL_ACTION is blocked by RI_PHONE_UI context —
+    -- register it inside that context so F8 can answer/decline the call
+    if self.isOpen then
+        g_inputBinding:beginActionEventsModification("RI_PHONE_UI")
+        local _, evtId = g_inputBinding:registerActionEvent(
+            "RI_CALL_ACTION", RoleplayPhone, RoleplayPhone.callAction,
+            false, true, false, true)
+        self.incomingCallActionEventId = evtId
+        g_inputBinding:endActionEventsModification()
+    end
     self:addCallHistoryEntry("incoming", self.call.contactName, callerNum or "")
     if self.ringSample and self.ringSample ~= 0 then playSample(self.ringSample, 0, 1.0, 0, 0, 0) end
     print(string.format("[RoleplayPhone] Incoming call from %s", callerName))
@@ -84,6 +133,16 @@ end
 
 function RoleplayPhone:answerCall()
     self:stopRingtone()
+    -- If phone was open when call came in, close it so movement is restored during the call
+    if self.isOpen then
+        if self.phoneContextEventId then g_inputBinding:removeActionEvent(self.phoneContextEventId); self.phoneContextEventId = nil end
+        if self.flashlightBlockerId then g_inputBinding:removeActionEvent(self.flashlightBlockerId); self.flashlightBlockerId = nil end
+        if self.incomingCallActionEventId then g_inputBinding:removeActionEvent(self.incomingCallActionEventId); self.incomingCallActionEventId = nil end
+        if g_localPlayer and g_localPlayer.inputComponent then g_localPlayer.inputComponent.locked = false end
+        g_inputBinding:revertContext(true)
+        g_inputBinding:setShowMouseCursor(false)
+        self.isOpen = false
+    end
     self.call.startTime = g_currentMission and g_currentMission.time or 0
     self.state = self.STATE.CALL_ACTIVE
     local myUserId = self:getMyUserId()
@@ -137,6 +196,11 @@ function RoleplayPhone:_restoreAfterCall()
         end
         self.state = self.STATE.CLOSED; self.isOpen = false
     else
+        -- Phone stays open — remove the incoming call action event and keep movement locked
+        if self.incomingCallActionEventId then
+            g_inputBinding:removeActionEvent(self.incomingCallActionEventId)
+            self.incomingCallActionEventId = nil
+        end
         self.state = prevState
     end
 end
@@ -216,7 +280,8 @@ function RoleplayPhone:startCallByPhone(phoneNum)
     end
     g_inputBinding:revertContext(true)
 
-    local evt = RI_CallEvent.new("ring", myUserId, toUserId, myName, "")
+    local myPhone = self:hashPhone(myUserId)
+    local evt = RI_CallEvent.new("ring", myUserId, toUserId, myName, myPhone)
     if g_server ~= nil then g_server:broadcastEvent(evt)
     elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
 

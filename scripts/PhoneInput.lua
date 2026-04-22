@@ -138,8 +138,7 @@ function RoleplayPhone:onHitboxClicked(hb)
     if hb.id == "keypad_call" then
         local raw = self.keypadNumber or ""
         if raw ~= "" then
-            -- Format matches hashPhone output: "555-XXXX"
-            local formatted = #raw <= 3 and raw or raw:sub(1,3) .. "-" .. raw:sub(4)
+            local formatted = self:formatPhoneDisplay(raw)
             self:startCallByPhone(formatted)
             self.keypadNumber = ""
         end; return
@@ -157,6 +156,54 @@ function RoleplayPhone:onHitboxClicked(hb)
     -- Recents tab call-back button
     if hb.id == "recents_callback" and hb.data and hb.data.phone then
         self:startCallByPhone(hb.data.phone); return
+    end
+
+    -- Recents clear all
+    if hb.id == "recents_clear_all" then
+        self.callHistory = {}
+        if g_server ~= nil then
+            local uniqueId = self:getMyUniqueId()
+            local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
+            local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
+            self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
+                ContactManager.contacts, self.messages, self.callHistory)
+        end
+        return
+    end
+
+    -- Delete message thread
+    if hb.id == "msg_delete_thread" and hb.data then
+        local idx = hb.data.index
+
+        -- Resolve other party's phone before clearing (needed for server-side delete)
+        local otherPhone = ""
+        if type(idx) == "number" then
+            local contact = ContactManager.contacts[idx]
+            otherPhone = contact and contact.phone or ""
+        elseif type(idx) == "string" then
+            local info = self.messageDisplayNames[idx]
+            otherPhone = info and info.phone or ""
+        end
+
+        -- Clear locally
+        self.messages[idx]       = nil
+        self.unreadMessages[idx] = nil
+        if type(idx) == "string" then
+            self.messageDisplayNames[idx] = nil
+        end
+
+        -- Persist
+        if g_server ~= nil then
+            local uniqueId = self:getMyUniqueId()
+            local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
+            local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
+            self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
+                ContactManager.contacts, self.messages, self.callHistory)
+        elseif g_client ~= nil and otherPhone ~= "" then
+            -- Tell server to remove from its copy so it won't sync back on reconnect
+            g_client:getServerConnection():sendEvent(RI_DeleteThreadEvent.new(otherPhone))
+        end
+        return
     end
 
     -- Contacts tab Call button
@@ -370,7 +417,13 @@ function RoleplayPhone:onHitboxClicked(hb)
             end
             ContactManager:removeContact(idx)
             self.selectedContact = nil
-            RoleplayPhone:saveContacts()
+            if g_server ~= nil then
+                local uniqueId = self:getMyUniqueId()
+                local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
+                local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
+                self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
+                    ContactManager.contacts, self.messages, self.callHistory)
+            end
         end
         self.state = self.STATE.CONTACTS; return
     end
@@ -392,8 +445,13 @@ function RoleplayPhone:onHitboxClicked(hb)
             if g_server == nil then
                 g_client:getServerConnection():sendEvent(
                     RI_ContactEvent.new("add", self:getMyUserId(), 0, data))
+            else
+                local uniqueId = self:getMyUniqueId()
+                local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
+                local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
+                self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
+                    ContactManager.contacts, self.messages, self.callHistory)
             end
-            RoleplayPhone:saveContacts()
         end
         self.contactForm.activeField = nil
         self.state = self.STATE.CONTACTS; return
