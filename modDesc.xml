@@ -31,6 +31,11 @@
         <sourceFile filename="scripts/Invoice.lua"/>
         <sourceFile filename="scripts/InvoiceManager.lua"/>
         <sourceFile filename="scripts/InvoiceSave.lua"/>
+        <sourceFile filename="scripts/PlayerEvents.lua"/>
+        <sourceFile filename="scripts/CallEvents.lua"/>
+        <sourceFile filename="scripts/ContactEvents.lua"/>
+        <sourceFile filename="scripts/MessageEvents.lua"/>
+        <sourceFile filename="scripts/WeatherEvents.lua"/>
         <sourceFile filename="scripts/InvoiceEvents.lua"/>
         <sourceFile filename="scripts/ContactManager.lua"/>
         <sourceFile filename="scripts/NotificationManager.lua"/>
@@ -38,6 +43,7 @@
         <!-- Phone core: defines RoleplayPhone table, state, init, lifecycle, Mission00 hooks -->
         <sourceFile filename="scripts/RoleplayPhone.lua"/>
         <!-- Phone extensions: add methods to RoleplayPhone (load after core) -->
+        <sourceFile filename="scripts/PhoneSave.lua"/>
         <sourceFile filename="scripts/PhoneHelpers.lua"/>
         <sourceFile filename="scripts/PhoneUI.lua"/>
         <sourceFile filename="scripts/PhoneWeather.lua"/>

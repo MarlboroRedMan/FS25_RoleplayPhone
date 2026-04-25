@@ -50,7 +50,7 @@
     <text name="phone_notif_paid"               text="Paid $%s to %s"/>
     <text name="phone_notif_invoice_rejected"   text="Invoice #%s rejected."/>
 
-    <!-- ─── Session 2 keys ──────────────────────────────────────────────── -->
+    <!-- ─── Session 2 keys ──────────────────────────────────────────────────────────────────────── -->
 
     <!-- Shared UI -->
     <text name="ui_btn_back" text="&lt; Back"/>
@@ -157,7 +157,7 @@
     <!-- ContactsApp — list view -->
     <text name="contacts_btn_add"     text="+ Add"/>
     <text name="contacts_my_profile_label" text="My Profile"/>
-    <text name="contacts_empty_state" text="No contacts yet.  Tap  + Add  to save one."/>
+    <text name="contacts_empty_state" text="No contacts yet. Add them in the Contacts app."/>
     <text name="contacts_no_farm"     text="No farm"/>
 
     <!-- ContactsApp — detail view -->
@@ -165,6 +165,7 @@
     <text name="contacts_label_notes" text="NOTES"/>
     <text name="contacts_btn_call"    text="Call"/>
     <text name="contacts_btn_message" text="Message"/>
+    <text name="contacts_btn_edit"    text="Edit Contact"/>
     <text name="contacts_btn_delete"  text="Delete Contact"/>
 
     <!-- ContactsApp — create / edit form -->
@@ -172,6 +173,8 @@
     <text name="contacts_field_player"    text="PLAYER"/>
     <text name="contacts_no_players_online" text="No other players online"/>
     <text name="contacts_field_farm_name" text="Farm Name"/>
+    <text name="contacts_field_role"     text="Role / Job"/>
+    <text name="contacts_label_role"     text="ROLE"/>
     <text name="contacts_field_phone"     text="Phone (RP #)"/>
     <text name="contacts_field_notes"     text="Notes"/>
     <text name="contacts_validation_name" text="Name is required"/>
