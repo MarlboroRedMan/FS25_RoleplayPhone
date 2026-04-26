@@ -79,6 +79,15 @@ function RoleplayPhone:getContactNameByPhone(phone)
     return nil
 end
 
+-- Returns the contact table AND its index for a given phone number, or nil, nil.
+function RoleplayPhone:getContactByPhone(phone)
+    if not phone or phone == "" then return nil, nil end
+    for i, c in ipairs(ContactManager.contacts) do
+        if c.phone == phone then return c, i end
+    end
+    return nil, nil
+end
+
 -- PHONE_FORMATS keyed by mapId.
 -- digits = total digit count that hashPhone generates (no dashes).
 -- format = how to display those digits (X = digit placeholder).
@@ -457,7 +466,10 @@ end
 function RoleplayPhone:loadPlayerRegistry()
     local dir = self:getSaveDir()
     if not dir then return {} end
-    local xmlFile = loadXMLFile("roleplayRegistryXML", dir .. "/roleplayers.xml")
+    local path = dir .. "/roleplayers.xml"
+    if not fileExists(path) then return {} end
+    local handleName = "roleplayRegistry_" .. tostring(math.floor(getTime() * 1000))
+    local xmlFile = loadXMLFile(handleName, path)
     if not xmlFile or xmlFile == 0 then return {} end
 
     local registry = {}
@@ -468,8 +480,9 @@ function RoleplayPhone:loadPlayerRegistry()
         if uniqueId == nil then break end
         table.insert(registry, {
             uniqueId = uniqueId,
-            fileId   = getXMLString(xmlFile, key .. "#fileId") or "",
-            phone    = getXMLString(xmlFile, key .. "#phone")  or "",
+            fileId   = getXMLString(xmlFile, key .. "#fileId")    or "",
+            phone    = getXMLString(xmlFile, key .. "#phone")     or "",
+            nickname = getXMLString(xmlFile, key .. "#nickname")  or "",
         })
         i = i + 1
     end
@@ -478,10 +491,22 @@ function RoleplayPhone:loadPlayerRegistry()
 end
 
 -- Saves the registry table back to roleplayers.xml.
+-- Always merges with cachedRegistry so offline players are never dropped.
 function RoleplayPhone:savePlayerRegistry(registry)
+    -- Merge: add any cached entries not already in the registry being saved
+    if RoleplayPhone.cachedRegistry then
+        local seen = {}
+        for _, entry in ipairs(registry) do seen[entry.uniqueId] = true end
+        for _, cached in ipairs(RoleplayPhone.cachedRegistry) do
+            if not seen[cached.uniqueId] then
+                table.insert(registry, cached)
+            end
+        end
+    end
     local dir = self:getSaveDir()
     if not dir then return end
-    local xmlFile = createXMLFile("roleplayRegistryXML", dir .. "/roleplayers.xml", "roleplayers")
+    local handleName = "roleplayRegistry_" .. tostring(math.floor(getTime() * 1000))
+    local xmlFile = createXMLFile(handleName, dir .. "/roleplayers.xml", "roleplayers")
     if not xmlFile or xmlFile == 0 then return end
 
     for i, entry in ipairs(registry) do
@@ -489,30 +514,41 @@ function RoleplayPhone:savePlayerRegistry(registry)
         setXMLString(xmlFile, key .. "#uniqueId", entry.uniqueId or "")
         setXMLString(xmlFile, key .. "#fileId",   entry.fileId   or "")
         setXMLString(xmlFile, key .. "#phone",    entry.phone    or "")
+        setXMLString(xmlFile, key .. "#nickname", entry.nickname or "")
     end
     saveXMLFile(xmlFile)
     delete(xmlFile)
 end
 
 -- Finds or creates a registry entry for a player.
--- Returns the entry (with fileId guaranteed to be set).
-function RoleplayPhone:getOrCreateRegistryEntry(uniqueId, phone)
-    local registry = self:loadPlayerRegistry()
+-- Returns the entry (with fileId and nickname guaranteed to be set).
+-- IMPORTANT: Uses cachedRegistry from memory instead of reading from disk.
+-- During Mission00.saveSavegame, getSaveDir() returns the tempsavegame path,
+-- so any disk read would fail (roleplayers.xml doesn't exist there yet).
+-- The in-memory cache is always authoritative — it was loaded at startup and
+-- kept in sync by every call to this function and on disconnect.
+function RoleplayPhone:getOrCreateRegistryEntry(uniqueId, phone, nickname)
+    -- Bootstrap from disk only if we have no cache yet (first call at startup)
+    if not RoleplayPhone.cachedRegistry then
+        RoleplayPhone.cachedRegistry = self:loadPlayerRegistry()
+    end
+    local registry = RoleplayPhone.cachedRegistry
 
     -- Look for existing entry by uniqueId
     for _, entry in ipairs(registry) do
         if entry.uniqueId == uniqueId then
-            -- Update phone if changed
-            if phone and phone ~= "" then entry.phone = phone end
+            if phone    and phone    ~= "" then entry.phone    = phone    end
+            if nickname and nickname ~= "" then entry.nickname = nickname end
             self:savePlayerRegistry(registry)
             return entry
         end
     end
 
-    -- New player — build their fileId
+    -- New player — build their fileId and add to in-memory registry
     local fileId = self:buildFileId(uniqueId, registry)
-    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "" }
+    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "", nickname = nickname or "" }
     table.insert(registry, entry)
+    -- cachedRegistry IS registry (same table reference), so it's already updated
     self:savePlayerRegistry(registry)
     return entry
 end

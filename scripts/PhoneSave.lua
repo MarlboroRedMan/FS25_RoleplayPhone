@@ -2,7 +2,7 @@
 -- All save and load logic for FS25_RoleplayPhone.
 -- Covers: save directory, invoices, per-player data (contacts/messages/calls).
 
--- ─── Save directory ──────────────────────────────────────────────────────────────────────────────
+-- ─── Save directory ───────────────────────────────────────────────────────────
 
 function RoleplayPhone:getSaveDir()
     if not g_currentMission or not g_currentMission.missionInfo then return nil end
@@ -13,7 +13,7 @@ function RoleplayPhone:getSaveDir()
     return rpDir
 end
 
--- ─── Invoices ─────────────────────────────────────────────────────────────────────────────────
+-- ─── Invoices ─────────────────────────────────────────────────────────────────
 
 function RoleplayPhone:saveInvoices()
     if not g_currentMission or not g_currentMission.missionInfo then return end
@@ -27,7 +27,7 @@ function RoleplayPhone:saveInvoices()
     print("[PhoneSave] Invoices saved")
 end
 
--- ─── Per-player data ──────────────────────────────────────────────────────────────────────────
+-- ─── Per-player data ──────────────────────────────────────────────────────────
 
 -- Saves contacts, messages, and call history for one player into their own XML file.
 function RoleplayPhone:savePlayerData(filename, contacts, messages, callHistory)
@@ -70,6 +70,10 @@ function RoleplayPhone:savePlayerData(filename, contacts, messages, callHistory)
                 setXMLInt(xmlFile,    mKey .. "#gameTime",   msg.gameTime   or 0)
                 setXMLInt(xmlFile,    mKey .. "#fromUserId", msg.fromUserId or 0)
                 setXMLString(xmlFile, mKey .. "#senderName", msg.senderName or "")
+                setXMLString(xmlFile, mKey .. "#msgType",    msg.msgType    or "text")
+                setXMLString(xmlFile, mKey .. "#cardName",   msg.cardName   or "")
+                setXMLString(xmlFile, mKey .. "#cardPhone",  msg.cardPhone  or "")
+                setXMLString(xmlFile, mKey .. "#cardFarm",   msg.cardFarm   or "")
                 mIdx = mIdx + 1
             end
             tIdx = tIdx + 1
@@ -106,6 +110,10 @@ function RoleplayPhone:loadPlayerData(filename, isHost)
     local dir = self:getSaveDir()
     if not dir then return nil end
     local path       = dir .. "/" .. filename .. ".xml"
+    if not fileExists(path) then
+        print("[PhoneSave] No player data found: " .. filename)
+        return nil
+    end
     local handleName = "roleplayPlayerXML_" .. tostring(math.floor(getTime() * 1000))
     local xmlFile    = loadXMLFile(handleName, path)
     if not xmlFile or xmlFile == 0 then
@@ -150,6 +158,10 @@ function RoleplayPhone:loadPlayerData(filename, isHost)
                 gameTime   = getXMLInt(xmlFile,    mKey .. "#gameTime")   or 0,
                 fromUserId = getXMLInt(xmlFile,    mKey .. "#fromUserId") or 0,
                 senderName = getXMLString(xmlFile, mKey .. "#senderName") or "",
+                msgType    = getXMLString(xmlFile, mKey .. "#msgType")    or "text",
+                cardName   = getXMLString(xmlFile, mKey .. "#cardName")   or "",
+                cardPhone  = getXMLString(xmlFile, mKey .. "#cardPhone")  or "",
+                cardFarm   = getXMLString(xmlFile, mKey .. "#cardFarm")   or "",
             })
             mIdx = mIdx + 1
         end
