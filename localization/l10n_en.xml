@@ -53,7 +53,7 @@
     <!-- ─── Session 2 keys ──────────────────────────────────────────────────────────────────────── -->
 
     <!-- Shared UI -->
-    <text name="ui_btn_back" text="&lt; Back"/>
+    <text name="ui_btn_back" text="Back"/>
     <text name="ui_day_fmt"  text="Day %s"/>
 
     <!-- WeatherApp — screen title -->
