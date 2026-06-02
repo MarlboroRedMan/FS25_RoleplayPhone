@@ -22,41 +22,59 @@ function RoleplayPhone:drawMessages()
     self:drawButton("btn_back", px + 0.006, headerY + 0.008, 0.045 * self.arScale, 0.026,
         g_i18n:getText("ui_btn_back"), 0.18, 0.20, 0.28, 0.010)
 
+    local nmW = 0.052 * self.arScale
+    self:drawButton("btn_new_message", px + pw - nmW - 0.006, headerY + 0.008, nmW, 0.026,
+        g_i18n:getText("ui_btn_new_msg"), 0.10, 0.32, 0.55, 0.010)
+
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
     renderText(px + pw / 2, headerY + headerH * 0.28, 0.013, g_i18n:getText("screen_title_messages"))
 
-    -- Build thread list: contacts with any messages or pending unread count
-    local threads = {}
-    for i, c in ipairs(ContactManager.contacts) do
-        local msgs   = self.messages[i]
-        local unread = self.unreadMessages[i] or 0
-        if (msgs and #msgs > 0) or unread > 0 then
-            table.insert(threads, {
-                index   = i,
-                contact = c,
-                lastMsg = msgs and msgs[#msgs] or nil,
-                unread  = unread,
-            })
+    -- Build thread list only when dirty (new message received/loaded) or cache is empty
+    if self._threadsDirty or not self._sortedThreads then
+        local threads = {}
+        for i, c in ipairs(ContactManager.contacts) do
+            local msgs   = self.messages[i]
+            local unread = self.unreadMessages[i] or 0
+            if (msgs and #msgs > 0) or unread > 0 then
+                table.insert(threads, {
+                    index   = i,
+                    contact = c,
+                    lastMsg = msgs and msgs[#msgs] or nil,
+                    unread  = unread,
+                })
+            end
         end
-    end
-    -- Also show messages from senders not in contacts (fallback threads)
-    for key, info in pairs(self.messageDisplayNames) do
-        local msgs   = self.messages[key]
-        local unread = self.unreadMessages[key] or 0
-        if (msgs and #msgs > 0) or unread > 0 then
-            table.insert(threads, {
-                index   = key,
-                contact = {
-                    name  = (info.phone and info.phone ~= "") and info.phone or info.name,
-                    phone = info.phone or "",
-                },
-                lastMsg = msgs and msgs[#msgs] or nil,
-                unread  = unread,
-            })
+        -- Also show messages from senders not in contacts (fallback threads)
+        for key, info in pairs(self.messageDisplayNames) do
+            local msgs   = self.messages[key]
+            local unread = self.unreadMessages[key] or 0
+            if (msgs and #msgs > 0) or unread > 0 then
+                table.insert(threads, {
+                    index   = key,
+                    contact = {
+                        name  = self:getContactNameByPhone(info.phone) or info.phone or info.name,
+                        phone = info.phone or "",
+                    },
+                    lastMsg = msgs and msgs[#msgs] or nil,
+                    unread  = unread,
+                })
+            end
         end
+        -- Sort threads: most recently active first (newest lastMsg gameDay/gameTime)
+        table.sort(threads, function(a, b)
+            local aDay  = a.lastMsg and (a.lastMsg.gameDay  or 0) or 0
+            local aTime = a.lastMsg and (a.lastMsg.gameTime or 0) or 0
+            local bDay  = b.lastMsg and (b.lastMsg.gameDay  or 0) or 0
+            local bTime = b.lastMsg and (b.lastMsg.gameTime or 0) or 0
+            if aDay ~= bDay then return aDay > bDay end
+            return aTime > bTime
+        end)
+        self._sortedThreads = threads
+        self._threadsDirty  = false
     end
+    local threads = self._sortedThreads
 
     if #threads == 0 then
         setTextAlignment(RenderText.ALIGN_CENTER)
@@ -95,7 +113,7 @@ function RoleplayPhone:drawMessages()
         -- Last message preview
         setTextBold(false)
         if thread.lastMsg then
-            local preview = thread.lastMsg.text or ""
+            local preview = (thread.lastMsg.msgType == "contact_card") and g_i18n:getText("msg_contact_card_preview") or (thread.lastMsg.text or "")
             if #preview > 28 then preview = preview:sub(1, 25) .. "..." end
             setTextColor(thread.unread > 0 and 0.60 or 0.45,
                          thread.unread > 0 and 0.80 or 0.50,
@@ -134,7 +152,7 @@ function RoleplayPhone:drawMessages()
             renderText(badgeEdge, rowY - rowH + rowH * 0.38, 0.013, ">")
         end
 
-        self:addHitbox("msg_thread_row", px, rowY - rowH, pw, rowH, { index = thread.index })
+        self:addHitbox("msg_thread_row", px, rowY - rowH, delX - px - 0.004, rowH, { index = thread.index })
     end
 end
 
@@ -172,6 +190,25 @@ function RoleplayPhone:drawMessageThread()
     local pw = s.w
     local ph = s.h
 
+    -- Sort + alreadySentCard cache — recomputes only when contact or message count changes
+    local _msgs     = self.messages[self.selectedContact] or {}
+    local _cacheKey = tostring(self.selectedContact) .. ":" .. tostring(#_msgs)
+    if self._msgCacheKey ~= _cacheKey then
+        if #_msgs > 1 then
+            table.sort(_msgs, function(a, b)
+                if a.gameDay ~= b.gameDay then return a.gameDay < b.gameDay end
+                return (a.gameTime or 0) < (b.gameTime or 0)
+            end)
+        end
+        local _found = false
+        for _, _m in ipairs(_msgs) do
+            if _m.sent and (_m.msgType or "text") == "contact_card" then _found = true; break end
+        end
+        self._msgAlreadySentCard = _found
+        self._msgDataCache       = nil
+        self._msgCacheKey        = _cacheKey
+    end
+
     self:drawBigScreen()
 
     -- ── Header bar ────────────────────────────────────────────────────────────
@@ -199,10 +236,14 @@ function RoleplayPhone:drawMessageThread()
     setTextBold(false)
 
     -- ── Compose bar (bottom) ──────────────────────────────────────────────────
-    local composeH  = 0.096
+    local composeH  = 0.112
     local composeY  = py + 0.006
     local sendBtnW  = 0.060 * self.arScale
-    local sendBtnH  = 0.032
+    local sendBtnH  = 0.030
+    local cardBtnH  = 0.026
+    local btnGap    = 0.005
+    local totalBtnH = sendBtnH + cardBtnH + btnGap
+    local btnTopY   = composeY + (composeH - totalBtnH) / 2
     local fieldX    = px + 0.010
     local fieldW    = pw - sendBtnW - 0.022
     local fieldH    = composeH - 0.016
@@ -226,14 +267,39 @@ function RoleplayPhone:drawMessageThread()
             g_i18n:getText("contacts_msg_placeholder"))
     end
 
-    -- Send button — vertically centered in compose bar
-    local sbX = fieldX + fieldW + 0.006
-    local sbY = composeY + (composeH - sendBtnH) / 2
+    -- Character counter (bottom-right of compose field, visible when active or has text)
+    local charCount = utf8Strlen(compose.text)
+    if charCount > 0 or active then
+        local cr, cg, cb, ca
+        if charCount >= 295 then
+            cr, cg, cb, ca = 0.95, 0.30, 0.25, 1.00   -- red: almost full
+        elseif charCount >= 250 then
+            cr, cg, cb, ca = 0.90, 0.70, 0.15, 0.85   -- orange: getting close
+        else
+            cr, cg, cb, ca = 0.80, 0.85, 0.95, 0.90   -- dim: plenty of room
+        end
+        setTextAlignment(RenderText.ALIGN_RIGHT)
+        setTextBold(false)
+        setTextColor(cr, cg, cb, ca)
+        renderText(fieldX + fieldW - 0.004, fieldY + 0.006, 0.008,
+            charCount .. "/300")
+    end
+
+    -- Share Card button (above Send) — hide if already sent card in this thread
+    local btnX  = fieldX + fieldW + 0.006
+    local cbY   = btnTopY + sendBtnH + btnGap
+    local alreadySentCard = self._msgAlreadySentCard or false
+    if not alreadySentCard then
+        self:drawButton("btn_share_card", btnX, cbY, sendBtnW - 0.004, cardBtnH,
+            g_i18n:getText("msg_share_card"), 0.18, 0.28, 0.45, 0.009)
+    end
+
+    -- Send button (bottom of right column)
     local canSend = compose.text ~= ""
     local sbR = canSend and 0.10 or 0.15
     local sbG = canSend and 0.42 or 0.18
     local sbB = canSend and 0.22 or 0.20
-    self:drawButton("btn_send_message", sbX, sbY, sendBtnW - 0.004, sendBtnH,
+    self:drawButton("btn_send_message", btnX, btnTopY, sendBtnW - 0.004, sendBtnH,
         g_i18n:getText("contacts_btn_send"), sbR, sbG, sbB, 0.010)
 
     -- ── Message thread (between header and compose bar) ───────────────────────
@@ -244,12 +310,6 @@ function RoleplayPhone:drawMessageThread()
     self:drawRect(px, threadBot, pw, 0.001, 0.12, 0.14, 0.20, 0.4)
 
     local msgs = self.messages[self.selectedContact] or {}
-    if #msgs > 1 then
-        table.sort(msgs, function(a, b)
-            if a.gameDay ~= b.gameDay then return a.gameDay < b.gameDay end
-            return (a.gameTime or 0) < (b.gameTime or 0)
-        end)
-    end
 
     if #msgs == 0 then
         setTextAlignment(RenderText.ALIGN_CENTER)
@@ -272,45 +332,22 @@ function RoleplayPhone:drawMessageThread()
         local dateGap   = 0.005
         local maxTextW  = bubbleW - 0.018
 
-        -- Word-wrap helper (same pattern as invoice notes)
-        local function wrapText(text)
-            local lines = {}
-            local words = {}
-            for w in (text or ""):gmatch("%S+") do table.insert(words, w) end
-            if #words == 0 then return {""} end
-            local cur = ""
-            for _, word in ipairs(words) do
-                -- split any word wider than maxTextW
-                while getTextWidth(textSize, word) > maxTextW do
-                    local i = 1
-                    while i < #word and getTextWidth(textSize, word:sub(1, i+1)) <= maxTextW do
-                        i = i + 1
-                    end
-                    if cur ~= "" then table.insert(lines, cur); cur = "" end
-                    table.insert(lines, word:sub(1, i))
-                    word = word:sub(i + 1)
-                end
-                if word == "" then
-                elseif cur == "" then
-                    cur = word
-                elseif getTextWidth(textSize, cur .. " " .. word) <= maxTextW then
-                    cur = cur .. " " .. word
+        -- Pre-calculate lines + height once; reuse cached table until messages change
+        if not self._msgDataCache then
+            local cardFixedH = topPad + dateLineH + dateGap + 2 * lineH + 0.030 + botPad
+            local built = {}
+            for i = 1, #msgs do
+                if (msgs[i].msgType or "text") == "contact_card" then
+                    built[i] = { lines = {}, h = cardFixedH, isCard = true }
                 else
-                    table.insert(lines, cur)
-                    cur = word
+                    local lines = self:wrapText(msgs[i].text, textSize, maxTextW)
+                    local bh    = topPad + dateLineH + dateGap + #lines * lineH + botPad
+                    built[i]    = { lines = lines, h = bh }
                 end
             end
-            if cur ~= "" then table.insert(lines, cur) end
-            return lines
+            self._msgDataCache = built
         end
-
-        -- Pre-calculate lines + height for every message
-        local msgData = {}
-        for i = 1, #msgs do
-            local lines = wrapText(msgs[i].text)
-            local bh    = topPad + dateLineH + dateGap + #lines * lineH + botPad
-            msgData[i]  = { lines = lines, h = bh }
-        end
+        local msgData = self._msgDataCache
 
         -- Apply scroll offset (0 = newest at bottom)
         local scrollOffset = self.messageScrollOffset or 0
@@ -349,29 +386,73 @@ function RoleplayPhone:drawMessageThread()
             local isSent = msg.sent
             local bh     = md.h
             local bx     = isSent and (px + pw - bubbleW - 0.012) or (px + 0.012)
-            local textX  = isSent and (bx + bubbleW - 0.009) or (bx + 0.009)
+            local textX  = bx + 0.009
 
-            local br = isSent and 0.10 or 0.14
-            local bg = isSent and 0.40 or 0.18
-            local bb = isSent and 0.20 or 0.42
-            self:drawRect(bx, curY, bubbleW, bh, br, bg, bb, 1.0)
-
-            -- Date stamp near top of bubble
+            -- Date stamp (shared by both bubble types)
             local dateStr = self:formatGameDate(msg.gameDay or 0)
             if (msg.gameTime or 0) > 0 then
                 dateStr = dateStr .. "  " .. self:formatGameTime(msg.gameTime)
             end
-            local dateY = curY + botPad + #md.lines * lineH + dateGap
-            setTextAlignment(isSent and RenderText.ALIGN_RIGHT or RenderText.ALIGN_LEFT)
-            setTextBold(false)
-            setTextColor(0.55, 0.65, 0.75, 0.7)
-            renderText(textX, dateY, dateSize, dateStr)
 
-            -- Text lines (line 1 at top, last line nearest bottom)
-            setTextColor(1, 1, 1, 0.95)
-            for li, line in ipairs(md.lines) do
-                local lineY = curY + botPad + (#md.lines - li) * lineH
-                renderText(textX, lineY, textSize, line)
+            if md.isCard then
+                -- ── Contact card bubble ───────────────────────────────────────
+                local br = isSent and 0.08 or 0.10
+                local bg = isSent and 0.28 or 0.18
+                local bb = isSent and 0.45 or 0.42
+                self:drawRect(bx, curY, bubbleW, bh, br, bg, bb, 1.0)
+                -- Accent line on left edge
+                self:drawRect(bx, curY, 0.003, bh, 0.40, 0.65, 1.0, 1.0)
+
+                -- Date
+                local dateY = curY + botPad + 2 * lineH + 0.030 + dateGap
+                setTextAlignment(RenderText.ALIGN_LEFT)
+                setTextBold(false)
+                setTextColor(0.55, 0.65, 0.75, 0.7)
+                renderText(textX, dateY, dateSize, dateStr)
+
+                -- Card content: name, phone
+                local nameY  = curY + botPad + 1 * lineH + 0.030
+                local phoneY = curY + botPad + 0 * lineH + 0.030
+
+                setTextAlignment(RenderText.ALIGN_LEFT)
+                setTextBold(true)
+                setTextColor(1, 1, 1, 1)
+                renderText(textX, nameY, textSize, msg.cardName or "")
+                setTextBold(false)
+                setTextColor(0.75, 0.88, 1.0, 0.9)
+                renderText(textX, phoneY, textSize, msg.cardPhone or "")
+
+                -- Save / Saved button (only on received cards)
+                if not isSent then
+                    local alreadySaved = RoleplayPhone:getContactByPhone(msg.cardPhone or "") ~= nil
+                    local saveBtnW = 0.040 * self.arScale
+                    local saveBtnH = 0.022
+                    local saveBtnX = bx + bubbleW - saveBtnW - 0.006
+                    local saveBtnY = curY + botPad
+                    if not alreadySaved then
+                        self:drawButton("btn_save_contact_card", saveBtnX, saveBtnY, saveBtnW, saveBtnH,
+                            g_i18n:getText("msg_card_save"), 0.10, 0.42, 0.22, 0.009,
+                            { cardName=msg.cardName, cardPhone=msg.cardPhone, cardFarm=msg.cardFarm })
+                    end
+                end
+            else
+                -- ── Normal text bubble ────────────────────────────────────────
+                local br = isSent and 0.10 or 0.14
+                local bg = isSent and 0.40 or 0.18
+                local bb = isSent and 0.20 or 0.42
+                self:drawRect(bx, curY, bubbleW, bh, br, bg, bb, 1.0)
+
+                local dateY = curY + botPad + #md.lines * lineH + dateGap
+                setTextAlignment(RenderText.ALIGN_LEFT)
+                setTextBold(false)
+                setTextColor(0.55, 0.65, 0.75, 0.7)
+                renderText(textX, dateY, dateSize, dateStr)
+
+                setTextColor(1, 1, 1, 0.95)
+                for li, line in ipairs(md.lines) do
+                    local lineY = curY + botPad + (#md.lines - li) * lineH
+                    renderText(textX, lineY, textSize, line)
+                end
             end
 
             curY = curY + bh + bubbleGap

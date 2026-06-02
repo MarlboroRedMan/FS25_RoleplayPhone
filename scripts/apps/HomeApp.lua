@@ -100,18 +100,18 @@ function RoleplayPhone:drawWeatherWidget(px, py, pw, ph)
             local isHailing = weather.getIsHailing and weather:getIsHailing() or false
 
             if isHailing then
-                condStr = "Hail";      condColor = { 0.60, 0.80, 0.95 }; condKey = "Hail"
+                condStr = g_i18n:getText("weather_cond_hail"); condColor = { 0.60, 0.80, 0.95 }; condKey = "Hail"
             elseif isSnowing then
-                condStr = "Snow";      condColor = { 0.85, 0.92, 1.00 }; condKey = "Snow"
+                condStr = g_i18n:getText("weather_cond_snow"); condColor = { 0.85, 0.92, 1.00 }; condKey = "Snow"
             elseif isRaining then
                 local intensity = weather.getRainFallScale and weather:getRainFallScale() or 1
                 if intensity > 0.6 then
-                    condStr = "Heavy Rain"; condColor = { 0.45, 0.65, 0.90 }; condKey = "HeavyRain"
+                    condStr = g_i18n:getText("weather_cond_heavy_rain"); condColor = { 0.45, 0.65, 0.90 }; condKey = "HeavyRain"
                 else
-                    condStr = "Rain";       condColor = { 0.45, 0.65, 0.90 }; condKey = "Rain"
+                    condStr = g_i18n:getText("weather_cond_rain");       condColor = { 0.45, 0.65, 0.90 }; condKey = "Rain"
                 end
             else
-                condStr = "Clear"; condColor = { 1.0, 0.85, 0.30 }; condKey = "Clear"
+                condStr = g_i18n:getText("weather_cond_clear"); condColor = { 1.0, 0.85, 0.30 }; condKey = "Clear"
             end
 
             if weather.temperatureUpdater then

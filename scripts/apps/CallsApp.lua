@@ -42,7 +42,6 @@ function RoleplayPhone:drawCallsApp()
 
     -- Content area (everything between tab bar bottom and phone bottom)
     local contentH = tabBarY - py
-    local tab = self.callsTab or "keypad"
     if     tab == "keypad"   then self:drawCallsKeypad(px, py, pw, contentH)
     elseif tab == "recents"  then self:drawCallsRecents(px, py, pw, contentH)
     elseif tab == "contacts" then self:drawCallsContacts(px, py, pw, contentH)
@@ -172,14 +171,37 @@ function RoleplayPhone:drawCallsKeypad(px, py, pw, contentH)
     local cg = active and 0.42 or 0.25
     local cb = active and 0.16 or 0.14
     local ca = active and 1.0  or 0.60
-    self:drawRect(callBtnX, callBtnY, callBtnW, callBtnH, cr, cg, cb, ca)
-    setTextAlignment(RenderText.ALIGN_CENTER)
-    setTextBold(true)
-    setTextColor(1, 1, 1, active and 1.0 or 0.45)
-    renderText(callBtnX + callBtnW / 2, callBtnY + callBtnH * 0.23, 0.013,
-        g_i18n:getText("calls_btn_call"))
-    if active then
-        self:addHitbox("keypad_call", callBtnX, callBtnY, callBtnW, callBtnH)
+
+    if self.dialerFromMessages and active then
+        -- Split into Call (left) + Message (right)
+        local btnGap  = 0.006
+        local halfW   = (callBtnW - btnGap) / 2
+        local msgBtnX = callBtnX + halfW + btnGap
+        -- Call half
+        self:drawRect(callBtnX, callBtnY, halfW, callBtnH, cr, cg, cb, ca)
+        setTextAlignment(RenderText.ALIGN_CENTER)
+        setTextBold(true)
+        setTextColor(1, 1, 1, 1)
+        renderText(callBtnX + halfW / 2, callBtnY + callBtnH * 0.23, 0.013,
+            g_i18n:getText("calls_btn_call"))
+        self:addHitbox("keypad_call", callBtnX, callBtnY, halfW, callBtnH)
+        -- Message half
+        self:drawRect(msgBtnX, callBtnY, halfW, callBtnH, 0.08, 0.28, 0.52, 1.0)
+        setTextBold(true)
+        setTextColor(1, 1, 1, 1)
+        renderText(msgBtnX + halfW / 2, callBtnY + callBtnH * 0.23, 0.013,
+            g_i18n:getText("calls_btn_msg"))
+        self:addHitbox("keypad_message", msgBtnX, callBtnY, halfW, callBtnH)
+    else
+        self:drawRect(callBtnX, callBtnY, callBtnW, callBtnH, cr, cg, cb, ca)
+        setTextAlignment(RenderText.ALIGN_CENTER)
+        setTextBold(true)
+        setTextColor(1, 1, 1, active and 1.0 or 0.45)
+        renderText(callBtnX + callBtnW / 2, callBtnY + callBtnH * 0.23, 0.013,
+            g_i18n:getText("calls_btn_call"))
+        if active then
+            self:addHitbox("keypad_call", callBtnX, callBtnY, callBtnW, callBtnH)
+        end
     end
 end
 
@@ -222,10 +244,10 @@ function RoleplayPhone:drawCallsRecents(px, py, pw, contentH)
         setTextColor(dirColor[1], dirColor[2], dirColor[3], 1.0)
         renderText(px + 0.008, rowY - rowH + rowH * 0.52, 0.013, dirSymbol)
 
-        -- Contact name (use saved contact name if phone matches, else stored name)
+        -- Contact name (use saved contact name if phone matches, else phone number, else stored name)
         setTextBold(true)
         setTextColor(0.92, 0.95, 1.0, 1.0)
-        local displayName = self:getContactNameByPhone(entry.phone) or entry.name
+        local displayName = self:getContactNameByPhone(entry.phone) or entry.phone or entry.name
         renderText(px + 0.028, rowY - rowH + rowH * 0.52, 0.012,
             displayName or g_i18n:getText("phone_unknown_contact"))
 
@@ -239,24 +261,28 @@ function RoleplayPhone:drawCallsRecents(px, py, pw, contentH)
 
         -- Date/time (right-aligned, left of callback button if present)
         local cbW     = 0.040 * self.arScale
+        local msgBtnW = 0.036 * self.arScale
         local dateStr = self:formatGameDate(entry.gameDay or 0)
         if (entry.gameTime or 0) > 0 then
             dateStr = dateStr .. "  " .. self:formatGameTime(entry.gameTime)
         end
         local dateEdgeX = (entry.phone and entry.phone ~= "")
-            and (px + pw - 0.008 - cbW - 0.008)
+            and (px + pw - 0.008 - cbW - 0.004 - msgBtnW - 0.008)
             or  (px + pw - 0.010)
         setTextAlignment(RenderText.ALIGN_RIGHT)
         setTextBold(false)
         setTextColor(0.42, 0.48, 0.60, 0.70)
         renderText(dateEdgeX, rowY - rowH + rowH * 0.18, 0.009, dateStr)
 
-        -- Call-back button — only shown when phone number is known
+        -- Call-back + Message buttons — only shown when phone number is known
         if entry.phone and entry.phone ~= "" then
-            local cbW = 0.040 * self.arScale
-            local cbH = 0.028
-            local cbX = px + pw - 0.008 - cbW
-            local cbY = rowY - rowH + (rowH - cbH) / 2
+            local cbH    = 0.028
+            local cbX    = px + pw - 0.008 - cbW
+            local cbY    = rowY - rowH + (rowH - cbH) / 2
+            local msgBtnH = cbH
+            local msgBtnX = cbX - 0.004 - msgBtnW
+            local msgBtnY = cbY
+            -- Call button
             self:drawRect(cbX, cbY, cbW, cbH, 0.07, 0.36, 0.13, 0.90)
             setTextAlignment(RenderText.ALIGN_CENTER)
             setTextBold(false)
@@ -264,6 +290,13 @@ function RoleplayPhone:drawCallsRecents(px, py, pw, contentH)
             renderText(cbX + cbW / 2, cbY + cbH * 0.18, 0.009,
                 g_i18n:getText("calls_btn_call"))
             self:addHitbox("recents_callback", cbX, cbY, cbW, cbH,
+                { phone = entry.phone, name = entry.name })
+            -- Message button
+            self:drawRect(msgBtnX, msgBtnY, msgBtnW, msgBtnH, 0.08, 0.28, 0.52, 0.90)
+            setTextColor(0.70, 0.88, 1.0, 1.0)
+            renderText(msgBtnX + msgBtnW / 2, msgBtnY + msgBtnH * 0.18, 0.009,
+                g_i18n:getText("calls_btn_msg"))
+            self:addHitbox("recents_message", msgBtnX, msgBtnY, msgBtnW, msgBtnH,
                 { phone = entry.phone, name = entry.name })
         end
     end
@@ -296,7 +329,8 @@ function RoleplayPhone:drawCallsContacts(px, py, pw, contentH)
         local avSize = 0.030
         local avX    = px + 0.010
         local avY    = rowY - rowH + (rowH - avSize) / 2
-        self:drawRect(avX, avY, avSize, avSize, 0.12, 0.28, 0.58, 1.0)
+        local ac = self:getAvatarColor(c.name)
+        self:drawRect(avX, avY, avSize, avSize, ac[1], ac[2], ac[3], 1.0)
         setTextAlignment(RenderText.ALIGN_CENTER)
         setTextBold(true)
         setTextColor(1, 1, 1, 1)
@@ -390,137 +424,21 @@ function RoleplayPhone:drawCallScreen()
         self:drawRect(bx1, btnY, btnW, btnH, 0.08, 0.45, 0.18, 0.85)
         setTextBold(false)
         setTextColor(1, 1, 1, 0.9)
-        renderText(bx1 + btnW / 2, btnY + 0.008, 0.010, g_i18n:getText("call_btn_answer"))
+        renderText(bx1 + btnW / 2, btnY + 0.008, 0.010,
+            self:getCallActionKeyName() .. "  " .. g_i18n:getText("call_btn_answer"))
         self:drawRect(bx2, btnY, btnW, btnH, 0.50, 0.10, 0.10, 0.85)
-        renderText(bx2 + btnW / 2, btnY + 0.008, 0.010, g_i18n:getText("call_btn_decline"))
+        renderText(bx2 + btnW / 2, btnY + 0.008, 0.010,
+            self:getDeclineActionKeyName() .. "  " .. g_i18n:getText("call_btn_decline"))
     else
         self:drawRect(cx - btnW / 2, btnY, btnW, btnH, 0.50, 0.10, 0.10, 0.85)
         setTextBold(false)
         setTextColor(1, 1, 1, 0.9)
-        renderText(cx, btnY + 0.008, 0.010, g_i18n:getText("call_btn_end"))
+        renderText(cx, btnY + 0.008, 0.010,
+            self:getDeclineActionKeyName() .. "  " .. g_i18n:getText("call_btn_end"))
     end
-
-    setTextBold(false)
-    setTextColor(0.50, 0.60, 0.75, 0.70)
-    renderText(cx, py + 0.004, 0.009,
-        string.format(g_i18n:getText("call_key_hint_fmt"), self:getCallActionKeyName()))
 end
 
--- ─── Mission00 hooks ─────────────────────────────────────────────────────────
-Mission00.update = Utils.appendedFunction(Mission00.update, function(mission, dt)
-    RoleplayPhone:updateBattery(dt / 1000)
-    RoleplayPhone:updateCallTimeout(dt)
-    RoleplayPhone:updateCallKeyPoll()
-end)
-
-Mission00.draw = Utils.appendedFunction(Mission00.draw, function(mission)
-    if not RoleplayPhone.inputRegistered then return end
-    RoleplayPhone:draw()
-end)
-
-Mission00.mouseEvent = Utils.appendedFunction(Mission00.mouseEvent,
-    function(mission, posX, posY, isDown, isUp, button)
-        RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
-    end)
-
-local _phoneKeyListener = {}
-function _phoneKeyListener:keyEvent(unicode, sym, modifier, isDown)
-    RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
-end
-
--- FS25 calls these on every registered mod event listener during game save/load.
--- Without them the engine fails the entire save with Error 7.
-function _phoneKeyListener:saveToXMLFile(xmlFilename, key, usedModNames)
-    -- saveSavegame handles all saving now — this is intentionally empty
-    -- (engine requires this function to exist to avoid Error 7)
-end
-
-function _phoneKeyListener:loadFromXMLFile(xmlFilename, key)
-    -- Loading is handled in Mission00.loadMap hook via RoleplayPhone:loadSavedData()
-end
-
-addModEventListener(_phoneKeyListener)
-
-Mission00.loadMap = Utils.appendedFunction(Mission00.loadMap, function(mission, name)
-    RoleplayPhone:init()
-    RoleplayPhone:loadSavedData()
-end)
-
--- Register keybind + announce player after gameplay fully starts.
-RoleplayPhone.inputRegistered = false
-
-g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
-    if RoleplayPhone.inputRegistered then return end
-    print("[RoleplayPhone] CURRENT_MISSION_LOADED fired, registering keybind")
-    RoleplayPhone:registerKeybind()
-
-    local myUserId   = RoleplayPhone:getMyUserId()
-    local myFarmId   = RoleplayPhone:getMyFarmId()
-    local myUniqueId = RoleplayPhone:getMyUniqueId()
-    local myName     = (g_currentMission and g_currentMission.playerNickname)
-                       or RoleplayPhone:getFarmName(myFarmId)
-    local myPhone    = RoleplayPhone:hashPhone(myUserId)
-
-    -- Load host's own player data now that uniqueId is available (local hosted sessions only)
-    -- On dedicated servers all player data is pushed via sync events — no direct file load needed
-    if g_server ~= nil and myUniqueId ~= "" then
-        local entry    = RoleplayPhone:getOrCreateRegistryEntry(myUniqueId, myPhone)
-        local filename = RoleplayPhone:buildPlayerFilename(myName, entry.fileId)
-        RoleplayPhone:loadPlayerData(filename, true)
-        print("[RoleplayPhone] Host data loaded: " .. filename)
-
-        -- Repopulate messageDisplayNames for u_ keyed threads (unknown senders)
-        local reg = RoleplayPhone:loadPlayerRegistry()
-        for key, _ in pairs(RoleplayPhone.messages) do
-            if type(key) == "string" and key:sub(1, 2) == "u_" then
-                local uid = key:sub(3)
-                local info = { name = "Unknown", phone = "", userId = 0 }
-                for _, regEntry in ipairs(reg) do
-                    if regEntry.uniqueId == uid then
-                        info.phone = regEntry.phone or ""
-                        info.name  = regEntry.phone or "Unknown"
-                        break
-                    end
-                end
-                -- Fallback: pull senderName from first message in thread
-                if info.name == "Unknown" then
-                    local msgs = RoleplayPhone.messages[key]
-                    if msgs and msgs[1] then info.name = msgs[1].senderName or "Unknown" end
-                end
-                RoleplayPhone.messageDisplayNames[key] = info
-            end
-        end
-    end
-
-    -- Announce ourselves so everyone knows we're online
-    local helloEvt = RI_PlayerHelloEvent.new(myUserId, myFarmId, myName, myPhone, myUniqueId)
-    if g_server ~= nil then
-        RoleplayPhone.onlineUsers[myUserId] = {
-            farmId   = myFarmId,
-            name     = myName,
-            phone    = myPhone,
-            uniqueId = myUniqueId,
-        }
-        g_server:broadcastEvent(helloEvt)
-    elseif g_client ~= nil then
-        g_client:getServerConnection():sendEvent(helloEvt)
-    end
-    print(string.format("[RoleplayPhone] Sent PlayerHello: userId=%d farmId=%d phone=%s name=%s",
-        myUserId, myFarmId, myPhone, myName))
-
-    -- Login notification for unpaid invoices
-    local unpaid = 0
-    for _, inv in pairs(InvoiceManager.invoices) do
-        if inv.toFarmId == myFarmId and inv.status == "PENDING" then
-            unpaid = unpaid + 1
-        end
-    end
-    if unpaid > 0 then
-        local msg = unpaid == 1
-            and g_i18n:getText("phone_notif_unpaid_one")
-            or  string.format(g_i18n:getText("phone_notif_unpaid_multi"), unpaid)
-        NotificationManager:push("info", msg)
-    end
-
-    -- Contact sync is now push-based (server pushes on connect) — no client pull needed
-end, RoleplayPhone)
+-- ─── Lifecycle hooks → scripts/Bootstrap.lua ─────────────────────────────────
+-- Mission00.update/draw/mouseEvent, addModEventListener, Mission00.loadMap, and
+-- the CURRENT_MISSION_LOADED subscriber have been moved to Bootstrap.lua.
+-- Do not add lifecycle hooks here — they belong in Bootstrap.lua.

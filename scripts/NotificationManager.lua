@@ -123,7 +123,7 @@ end
 
 -- ─── HUD position persistence (per-player, user profile folder) ──────────────
 function NotificationManager:getPositionFilePath()
-    return getUserProfileAppPath() .. "modSettings/FS25_RoleplayInvoices_hud.xml"
+    return getUserProfileAppPath() .. "modSettings/FS25_RoleplayPhone_hud.xml"
 end
 
 function NotificationManager:saveHudPosition()

@@ -150,14 +150,22 @@ function RoleplayPhone_getInvoices(farmId, inboxOnly)
     if not farmId then return nil end
     local result = {}
     for _, inv in pairs(InvoiceManager.invoices) do
-        if inboxOnly then
-            if inv.toFarmId == farmId then
-                table.insert(result, inv)
-            end
-        else
-            if inv.toFarmId == farmId or inv.fromFarmId == farmId then
-                table.insert(result, inv)
-            end
+        local match = inboxOnly and (inv.toFarmId == farmId)
+                   or (not inboxOnly and (inv.toFarmId == farmId or inv.fromFarmId == farmId))
+        if match then
+            -- Return a shallow copy so external mods cannot mutate InvoiceManager state
+            table.insert(result, {
+                id          = inv.id,
+                fromFarmId  = inv.fromFarmId,
+                toFarmId    = inv.toFarmId,
+                amount      = inv.amount,
+                category    = inv.category,
+                description = inv.description,
+                notes       = inv.notes,
+                status      = inv.status,
+                createdDate = inv.createdDate,
+                dueDate     = inv.dueDate,
+            })
         end
     end
     table.sort(result, function(a, b) return (a.id or 0) > (b.id or 0) end)
@@ -278,12 +286,13 @@ end
 --   if ver then print("Phone version: " .. ver) end
 function RoleplayPhone_getVersion()
     if not RoleplayPhone_checkInstalled() then return nil end
-    -- Read version from g_modManager if available
+    -- Read version from g_modManager if available (fails if mod folder was renamed).
     if g_modManager then
         local mod = g_modManager:getModByName("FS25_RoleplayPhone")
         if mod and mod.version then return mod.version end
     end
-    return "unknown"
+    -- Fallback: hardcoded to match modDesc.xml — updated with each release.
+    return "0.4.2"
 end
 
 

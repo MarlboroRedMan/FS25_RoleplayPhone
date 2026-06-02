@@ -4,6 +4,10 @@ Invoice = {}
 Invoice.__index = Invoice
 
 function Invoice.new(data)
+    if not data then
+        print("[RoleplayPhone] ERROR: Invoice.new called with nil data")
+        data = {}
+    end
     local self = setmetatable({}, Invoice)
     self.id = data.id
     self.fromFarmId = data.fromFarmId

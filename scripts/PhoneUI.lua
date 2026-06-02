@@ -33,15 +33,43 @@ function RoleplayPhone:getStatusColor(status)
     return 0.30, 0.30, 0.38
 end
 
-function RoleplayPhone:drawButton(id, x, y, w, h, label, br, bg, bb, textSize)
+function RoleplayPhone:drawButton(id, x, y, w, h, label, br, bg, bb, textSize, userData)
     self:drawRect(x, y, w, h, br, bg, bb, 1.0)
     self:drawRect(x, y + h - 0.002, w, 0.002, br+0.15, bg+0.15, bb+0.15, 0.3)
     setTextAlignment(RenderText.ALIGN_CENTER); setTextBold(false); setTextColor(1, 1, 1, 0.95)
     renderText(x + w/2, y + h*0.32, textSize or 0.013, label)
-    self:addHitbox(id, x, y, w, h, {})
+    self:addHitbox(id, x, y, w, h, userData or {})
+end
+
+-- Shared word-wrap helper used by drawField, drawMessageThread, drawDetailMultiline.
+-- Returns a table of lines. Words wider than maxWidth are hard-split at the pixel boundary.
+function RoleplayPhone:wrapText(text, textSize, maxWidth)
+    local lines = {}
+    local words = {}
+    for word in (text or ""):gmatch("%S+") do table.insert(words, word) end
+    if #words == 0 then return {""} end
+    local cur = ""
+    for _, word in ipairs(words) do
+        while getTextWidth(textSize, word) > maxWidth do
+            local i = 1
+            while i < #word and getTextWidth(textSize, word:sub(1, i+1)) <= maxWidth do i = i + 1 end
+            if cur ~= "" then table.insert(lines, cur); cur = "" end
+            table.insert(lines, word:sub(1, i))
+            word = word:sub(i + 1)
+            if word == "" then break end  -- guard: empty remainder, outer loop will exit
+        end
+        if word == "" then
+        elseif cur == "" then cur = word
+        elseif getTextWidth(textSize, cur .. " " .. word) <= maxWidth then cur = cur .. " " .. word
+        else table.insert(lines, cur); cur = word
+        end
+    end
+    if cur ~= "" then table.insert(lines, cur) end
+    return lines
 end
 
 function RoleplayPhone:drawField(id, x, y, w, h, label, value, active, multiline)
+    -- Background
     local br = active and 0.15 or 0.10
     local bg = active and 0.32 or 0.14
     local bb = active and 0.55 or 0.20
@@ -51,59 +79,117 @@ function RoleplayPhone:drawField(id, x, y, w, h, label, value, active, multiline
     self:drawRect(x,         y+h-0.002, w,     0.002, 0.5, 0.6, 0.8, alpha)
     self:drawRect(x,         y,         0.002, h,     0.5, 0.6, 0.8, alpha)
     self:drawRect(x+w-0.002, y,         0.002, h,     0.5, 0.6, 0.8, alpha)
-    setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(0.6, 0.7, 0.8, 0.9)
-    renderText(x + 0.008, y + h - 0.016, 0.010, label)
-    local textPad = 0.004; local textSize = 0.012
+    -- Label (skip if empty)
+    if label and label ~= "" then
+        setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(0.6, 0.7, 0.8, 0.9)
+        renderText(x + 0.008, y + h - 0.016, 0.010, label)
+    end
+
+    local textPad  = 0.004
+    local textSize = 0.012
+
     if multiline then
-        local lineH = 0.016
-        local textAreaH = h - 0.024; local maxLines = math.max(1, math.floor(textAreaH / lineH))
-        local maxWidth = w - textPad * 2
-        local function splitWord(word)
-            local chunks = {}
-            while getTextWidth(textSize, word) > maxWidth do
-                local i = 1
-                while i < #word and getTextWidth(textSize, word:sub(1, i+1)) <= maxWidth do i = i + 1 end
-                table.insert(chunks, word:sub(1, i)); word = word:sub(i + 1)
-            end
-            table.insert(chunks, word); return chunks
-        end
-        local lines = {}; local words = {}
-        for word in value:gmatch("%S+") do table.insert(words, word) end
-        local currentLine = ""
-        for _, word in ipairs(words) do
-            local wordChunks = (getTextWidth(textSize, word) > maxWidth) and splitWord(word) or {word}
-            for ci, chunk in ipairs(wordChunks) do
-                if ci > 1 then table.insert(lines, currentLine); currentLine = chunk
-                elseif currentLine == "" then currentLine = chunk
-                else
-                    local testLine = currentLine .. " " .. chunk
-                    if getTextWidth(textSize, testLine) <= maxWidth then currentLine = testLine
-                    else table.insert(lines, currentLine); currentLine = chunk end
+        -- ── Multiline field ────────────────────────────────────────────────────
+        local lineH        = 0.016
+        local labelReserve = (label ~= nil and label ~= "") and 0.024 or 0.006
+        local textAreaH    = h - labelReserve
+        local maxLines     = math.max(1, math.floor(textAreaH / lineH))
+        local val          = value or ""
+
+        if active then
+            -- Cursor position (clamped to valid range)
+            local pos = math.max(1, math.min(self.textCursor.pos, utf8Strlen(val) + 1))
+            -- Wrap text BEFORE cursor to find which visual line the cursor falls on
+            local beforeText  = pos > 1 and utf8Substr(val, 0, pos-1) or ""
+            local linesBefore = self:wrapText(beforeText, textSize, w - textPad * 2)
+            local cursorLineIdx  = #linesBefore          -- which visual line cursor is on (1-based)
+            local cursorLineText = linesBefore[cursorLineIdx] or ""  -- portion of that line before cursor
+            -- Wrap full text for display
+            local lines = self:wrapText(val, textSize, w - textPad * 2)
+            -- Scroll: default to bottom, but scroll up if cursor would be off-screen
+            local startLine = math.max(1, #lines - maxLines + 1)
+            if cursorLineIdx < startLine then startLine = cursorLineIdx end
+            -- Draw lines + cursor rect
+            local showCursor = self:isCursorBlinkVisible()
+            setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(1, 1, 1, 1)
+            for i = startLine, math.min(#lines, startLine + maxLines - 1) do
+                local lineY = y + textAreaH - (i - startLine + 1) * lineH + 0.004
+                renderText(x + textPad, lineY, textSize, lines[i])
+                if i == cursorLineIdx and showCursor then
+                    local cX = x + textPad + getTextWidth(textSize, cursorLineText)
+                    self:drawRect(cX, lineY - 0.002, 0.0012, lineH - 0.002, 0.85, 0.92, 1.0, 1.0)
                 end
             end
-        end
-        table.insert(lines, currentLine)
-        if active then lines[#lines] = lines[#lines] .. "|" end
-        local startLine = math.max(1, #lines - maxLines + 1)
-        setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(1, 1, 1, 1)
-        for i = startLine, math.min(#lines, startLine + maxLines - 1) do
-            local lineY = y + textAreaH - (i - startLine + 1) * lineH + 0.004
-            renderText(x + textPad, lineY, textSize, lines[i])
+        else
+            local lines = self:wrapText(val, textSize, w - textPad * 2)
+            local startLine = math.max(1, #lines - maxLines + 1)
+            setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(1, 1, 1, 1)
+            for i = startLine, math.min(#lines, startLine + maxLines - 1) do
+                local lineY = y + textAreaH - (i - startLine + 1) * lineH + 0.004
+                renderText(x + textPad, lineY, textSize, lines[i])
+            end
         end
     else
-        local charW = textSize * 0.77; local maxChars = math.max(5, math.floor((w - textPad*2) / charW))
-        local display
+        -- ── Single-line field ──────────────────────────────────────────────────
+        local maxW = w - textPad * 2
+        local tx   = x + textPad
+        local ty   = y + 0.008
+        local val  = value or ""
+
         if active then
-            local withCursor = value .. "|"; local offset = self.fieldViewOffset or 0
-            if #withCursor - offset > maxChars then offset = #withCursor - maxChars end
-            if offset > 0 and #withCursor < offset + maxChars then offset = math.max(0, #withCursor - maxChars) end
-            self.fieldViewOffset = offset; display = withCursor:sub(offset+1, offset+maxChars)
+            local cursorW = 0.0012
+            local pos = math.max(1, math.min(self.textCursor.pos, utf8Strlen(val) + 1))
+            local before = pos > 1 and utf8Substr(val, 0, pos-1) or ""
+            local after  = pos <= utf8Strlen(val) and utf8Substr(val, pos-1) or ""
+
+            -- Trim before from left so cursor stays visible (at most ~70% of maxW)
+            local dispBefore = before
+            while getTextWidth(textSize, dispBefore) > maxW * 0.70 and utf8Strlen(dispBefore) > 0 do
+                dispBefore = utf8Substr(dispBefore, 1)
+            end
+            local bW = getTextWidth(textSize, dispBefore)
+
+            -- Trim after from right to fit remaining space
+            local dispAfter = after
+            local afterAvail = maxW - bW - cursorW
+            while getTextWidth(textSize, dispAfter) > afterAvail and utf8Strlen(dispAfter) > 0 do
+                dispAfter = utf8Substr(dispAfter, 0, utf8Strlen(dispAfter) - 1)
+            end
+
+            -- Selection highlight (only draw when whole value fits, to keep it simple)
+            local sMin, sMax = self:getSelectionRange()
+            if sMin and sMax and getTextWidth(textSize, val) <= maxW then
+                local selPre = sMin > 1 and utf8Substr(val, 0, sMin-1) or ""
+                local selTxt = utf8Substr(val, sMin-1, sMax-sMin)
+                local selX = tx + getTextWidth(textSize, selPre)
+                local selW = math.max(0.002, getTextWidth(textSize, selTxt))
+                self:drawRect(selX, y + 0.002, selW, h - 0.004, 0.20, 0.40, 0.75, 0.35)
+            end
+
+            -- Draw text before cursor
+            setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(1, 1, 1, 1)
+            if dispBefore ~= "" then renderText(tx, ty, textSize, dispBefore) end
+
+            -- Draw cursor rect
+            if self:isCursorBlinkVisible() then
+                self:drawRect(tx + bW, ty - 0.002, cursorW, 0.014, 0.85, 0.92, 1.0, 1.0)
+            end
+
+            -- Draw text after cursor
+            if dispAfter ~= "" then renderText(tx + bW + cursorW, ty, textSize, dispAfter) end
         else
-            self.fieldViewOffset = 0
-            display = (#value > maxChars) and (value:sub(1, maxChars-2) .. "..") or value
+            -- Inactive: trim right with ellipsis
+            local display = val
+            if getTextWidth(textSize, display) > maxW then
+                while #display > 0 and getTextWidth(textSize, display .. "..") > maxW do
+                    display = display:sub(1, #display - 1)
+                end
+                display = display .. ".."
+            end
+            setTextColor(1, 1, 1, 1); renderText(tx, ty, textSize, display)
         end
-        setTextColor(1, 1, 1, 1); renderText(x + textPad, y + 0.008, textSize, display)
     end
+
     self:addHitbox(id, x, y, w, h, {})
 end
 
@@ -145,7 +231,8 @@ function RoleplayPhone:drawStatusBar(px, py, pw, ph)
     setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false); setTextColor(1, 1, 1, 1)
     renderText(px + 0.014*self.arScale, barY, textSize, timeStr)
     setTextAlignment(RenderText.ALIGN_RIGHT)
-    renderText(px + pw - 0.042*self.arScale, barY, textSize, g_i18n:getText("phone_status_4g"))
+    if not self._cached4G then self._cached4G = g_i18n:getText("phone_status_4g") end
+    renderText(px + pw - 0.042*self.arScale, barY, textSize, self._cached4G)
     renderText(px + pw - 0.060*self.arScale, barY, textSize, "|||")
     if self.settings.batteryVisible then
         local bat = self.battery; local pct = bat.level / 100

@@ -1,5 +1,6 @@
 -- scripts/PhoneInput.lua
 -- Mouse and keyboard input handling: mouseEvent, onHitboxClicked, keyEvent, handleBackspace.
+-- onHitboxClicked delegates to app-specific handlers in scripts/apps/*Input.lua.
 
 function RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
     self.mouseX = posX
@@ -18,7 +19,7 @@ function RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
     end
 
     -- Scroll wheel on message thread
-    if self.state == self.STATE.MESSAGE_THREAD then
+    if self.state == self.STATE.MESSAGE_THREAD and isDown then
         local msgs = self.selectedContact and (self.messages[self.selectedContact] or {}) or {}
         if button == Input.MOUSE_BUTTON_WHEEL_UP then
             self.messageScrollOffset = math.min(#msgs - 1, (self.messageScrollOffset or 0) + 1)
@@ -31,7 +32,7 @@ function RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
     end
 
     -- Scroll wheel on create invoice form
-    if self.state == self.STATE.INVOICE_CREATE then
+    if self.state == self.STATE.INVOICE_CREATE and isDown then
         local scrollStep = 0.058
         local maxScroll  = scrollStep * 3
         if button == Input.MOUSE_BUTTON_WHEEL_UP then
@@ -65,6 +66,7 @@ function RoleplayPhone:mouseEvent(posX, posY, isDown, isUp, button)
 end
 
 function RoleplayPhone:onHitboxClicked(hb)
+
     -- Page dot navigation
     if hb.id:sub(1,9) == "page_dot_" and hb.data and hb.data.page then
         self.homePage = hb.data.page; return
@@ -76,7 +78,6 @@ function RoleplayPhone:onHitboxClicked(hb)
     if hb.id:sub(1,5) == "dock_" and hb.data and hb.data.appId then
         local appId = hb.data.appId
         if appId == "invoices" then
-            -- Mark all visible pending invoices as seen so badge clears
             local myFarmId = self:getMyFarmId()
             for _, inv in pairs(InvoiceManager.invoices) do
                 if inv.toFarmId == myFarmId and inv.status == "PENDING" then
@@ -100,122 +101,17 @@ function RoleplayPhone:onHitboxClicked(hb)
         return
     end
 
-    -- Message compose field focus
-    if hb.id == "msg_field" then self.messageCompose.active = true; return end
-
-    -- Send message
-    if hb.id == "btn_send_message" then self:sendMessage(); return end
-
-    -- Message button from contact detail
-    if hb.id == "btn_message_contact" then
-        self.messageScrollOffset = 0
-        self.state = self.STATE.MESSAGE_THREAD; return
-    end
-
-    -- Call button from contact detail or message thread → dial that contact
-    if hb.id == "btn_call" then
-        if (self.state == self.STATE.CONTACT_DETAIL or self.state == self.STATE.MESSAGE_THREAD)
-           and self.selectedContact then
-            self:startCall(); return
-        end
-        self.state = self.STATE.CALLS; self.callsTab = "keypad"; return
-    end
-
-    -- Answer / end call buttons
-    if hb.id == "btn_answer"   then self:answerCall(); return end
-    if hb.id == "btn_end_call" then self:endCall();    return end
-
-    -- Calls app tab bar
-    if hb.id == "calls_tab_keypad"   then self.callsTab = "keypad";   return end
-    if hb.id == "calls_tab_recents"  then self.callsTab = "recents";  return end
-    if hb.id == "calls_tab_contacts" then self.callsTab = "contacts"; return end
-
-    -- Keypad: specific buttons before generic prefix match
-    if hb.id == "keypad_del" then
-        local n = self.keypadNumber or ""
-        if #n > 0 then self.keypadNumber = n:sub(1, #n - 1) end; return
-    end
-    if hb.id == "keypad_call" then
-        local raw = self.keypadNumber or ""
-        if raw ~= "" then
-            local formatted = self:formatPhoneDisplay(raw)
-            self:startCallByPhone(formatted)
-            self.keypadNumber = ""
-        end; return
-    end
-    -- Keypad: digit buttons only (star/hash ignored — hashPhone is digits only)
-    if hb.id:sub(1,7) == "keypad_" then
-        local key = hb.id:sub(8)
-        if key ~= "star" and key ~= "hash" then
-            if #(self.keypadNumber or "") < self:getMaxKeypadDigits() then
-                self.keypadNumber = (self.keypadNumber or "") .. key
-            end
-        end; return
-    end
-
-    -- Recents tab call-back button
-    if hb.id == "recents_callback" and hb.data and hb.data.phone then
-        self:startCallByPhone(hb.data.phone); return
-    end
-
-    -- Recents clear all
-    if hb.id == "recents_clear_all" then
-        self.callHistory = {}
-        if g_server ~= nil then
-            local uniqueId = self:getMyUniqueId()
-            local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
-            local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
-            self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
-                ContactManager.contacts, self.messages, self.callHistory)
-        end
-        return
-    end
-
-    -- Delete message thread
-    if hb.id == "msg_delete_thread" and hb.data then
-        local idx = hb.data.index
-
-        -- Resolve other party's phone before clearing (needed for server-side delete)
-        local otherPhone = ""
-        if type(idx) == "number" then
-            local contact = ContactManager.contacts[idx]
-            otherPhone = contact and contact.phone or ""
-        elseif type(idx) == "string" then
-            local info = self.messageDisplayNames[idx]
-            otherPhone = info and info.phone or ""
-        end
-
-        -- Clear locally
-        self.messages[idx]       = nil
-        self.unreadMessages[idx] = nil
-        if type(idx) == "string" then
-            self.messageDisplayNames[idx] = nil
-        end
-
-        -- Persist
-        if g_server ~= nil then
-            local uniqueId = self:getMyUniqueId()
-            local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
-            local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
-            self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
-                ContactManager.contacts, self.messages, self.callHistory)
-        elseif g_client ~= nil and otherPhone ~= "" then
-            -- Tell server to remove from its copy so it won't sync back on reconnect
-            g_client:getServerConnection():sendEvent(RI_DeleteThreadEvent.new(otherPhone))
-        end
-        return
-    end
-
-    -- Contacts tab Call button
-    if hb.id == "calls_contact_call" and hb.data and hb.data.index then
-        self.selectedContact = hb.data.index
-        self:startCall(); return
-    end
+    -- App-specific input handlers
+    if self:handleCallsInput(hb)    then return end
+    if self:handleContactsInput(hb) then return end
+    if self:handleMessagesInput(hb) then return end
+    if self:handleInvoicesInput(hb) then return end
 
     -- Back button
     if hb.id == "btn_back" then
         if self.state == self.STATE.CALLS then
             self:clearMissedCallBadge()
+            self.dialerFromMessages = false
             self:goHome(); return
         end
         if self.state == self.STATE.MESSAGE_THREAD then
@@ -230,232 +126,9 @@ function RoleplayPhone:onHitboxClicked(hb)
         self:goHome(); return
     end
 
-    -- Tabs
+    -- Invoice inbox/outbox tabs
     if hb.id == "tab_inbox"  then self.currentTab = self.TAB.INBOX;  return end
     if hb.id == "tab_outbox" then self.currentTab = self.TAB.OUTBOX; return end
-
-    -- Create invoice
-    if hb.id == "btn_create_invoice" then self:resetForm(); self.state = self.STATE.INVOICE_CREATE; return end
-
-    -- Invoice row -> detail
-    if hb.id == "invoice_row" and hb.data and hb.data.invoice then
-        self.selectedInvoice = hb.data.invoice
-        self.state = self.STATE.INVOICE_DETAIL; return
-    end
-
-    -- Farm selector arrows
-    if hb.id == "farm_prev" then
-        local farms = self:getAvailableFarms()
-        self.form.toFarmIndex = ((self.form.toFarmIndex - 2) % #farms) + 1; return
-    end
-    if hb.id == "farm_next" then
-        local farms = self:getAvailableFarms()
-        self.form.toFarmIndex = (self.form.toFarmIndex % #farms) + 1; return
-    end
-
-    -- Category group arrows
-    if hb.id == "cat_group_prev" then
-        local n = #InvoiceManager.categoryGroups
-        self.form.categoryGroupIndex = ((self.form.categoryGroupIndex - 2) % n) + 1
-        self.form.categoryTypeIndex = 1; return
-    end
-    if hb.id == "cat_group_next" then
-        local n = #InvoiceManager.categoryGroups
-        self.form.categoryGroupIndex = (self.form.categoryGroupIndex % n) + 1
-        self.form.categoryTypeIndex = 1; return
-    end
-
-    -- Category type arrows
-    if hb.id == "cat_type_prev" then
-        local group = InvoiceManager.categoryGroups[self.form.categoryGroupIndex] or InvoiceManager.categoryGroups[1]
-        local n = #group.types
-        self.form.categoryTypeIndex = ((self.form.categoryTypeIndex - 2) % n) + 1; return
-    end
-    if hb.id == "cat_type_next" then
-        local group = InvoiceManager.categoryGroups[self.form.categoryGroupIndex] or InvoiceManager.categoryGroups[1]
-        local n = #group.types
-        self.form.categoryTypeIndex = (self.form.categoryTypeIndex % n) + 1; return
-    end
-
-    -- Text field focus
-    if hb.id == "field_amount"  then self.form.activeField = "amount";  return end
-    if hb.id == "field_notes"   then self.form.activeField = "notes";   return end
-    if hb.id == "field_dueDate" then self.form.activeField = "dueDate"; return end
-
-    -- Clear buttons
-    if hb.id == "clear_amount"      then self.form.amount      = ""; self.form.activeField = "amount";      return end
-    if hb.id == "clear_dueDate"     then self.form.dueDate     = ""; self.form.activeField = "dueDate";     return end
-    if hb.id == "clear_description" then self.form.description = ""; self.form.activeField = "description"; return end
-    if hb.id == "clear_notes"       then self.form.notes       = ""; self.form.activeField = "notes";       return end
-
-    -- Send invoice
-    if hb.id == "btn_send_invoice" then self:submitInvoice(); return end
-
-    -- Mark as paid (sender action on their own outgoing invoice)
-    if hb.id == "btn_mark_paid" and self.selectedInvoice then
-        local invId = self.selectedInvoice.id
-        self.selectedInvoice.status = "PAID"
-        local evt = InvoiceEvents.UpdateInvoiceEvent.new(invId, "PAID")
-        if g_server ~= nil then g_server:broadcastEvent(evt)
-        elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
-        RoleplayPhone:saveInvoices()
-        UsedPlusCompat:onInvoiceMarkedPaid(self.selectedInvoice)
-        print("[RoleplayPhone] Invoice marked as paid: #" .. tostring(invId)); return
-    end
-
-    -- Reject invoice
-    if hb.id == "btn_reject_invoice" and self.selectedInvoice then
-        local inv = self.selectedInvoice
-        if inv.status == "PENDING" then
-            inv.status = "REJECTED"
-            local evt = InvoiceEvents.UpdateInvoiceEvent.new(inv.id, "REJECTED")
-            if g_server ~= nil then g_server:broadcastEvent(evt)
-            elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
-            RoleplayPhone:saveInvoices()
-            UsedPlusCompat:onInvoiceRejected(inv)
-            NotificationManager:push("rejected",
-                string.format(g_i18n:getText("invoices_notif_rejected"),
-                    string.format("%04d", inv.id)))
-            print("[RoleplayPhone] Invoice rejected: #" .. tostring(inv.id))
-        end; return
-    end
-
-    -- Pay invoice
-    if hb.id == "btn_pay_invoice" and self.selectedInvoice then
-        local inv = self.selectedInvoice
-        local amount = inv.amount or 0
-        local myFarmId = self:getMyFarmId()
-        local fm = g_farmManager or (g_currentMission and g_currentMission.farmManager)
-        if fm then
-            local farm = fm:getFarmById(myFarmId)
-            if farm and farm.money >= amount then
-                if g_server ~= nil then
-                    g_currentMission:addMoney(-amount, myFarmId,    MoneyType.OTHER, true, true)
-                    g_currentMission:addMoney( amount, inv.fromFarmId, MoneyType.OTHER, true, true)
-                    inv.status = "PAID"
-                    g_server:broadcastEvent(InvoiceEvents.UpdateInvoiceEvent.new(inv.id, "PAID"))
-                    RoleplayPhone:saveInvoices()
-                elseif g_client ~= nil then
-                    inv.status = "PAID"
-                    g_client:getServerConnection():sendEvent(
-                        RI_PayInvoiceEvent.new(inv.id, inv.fromFarmId, myFarmId, amount))
-                end
-                UsedPlusCompat:onInvoicePaid(inv)
-                NotificationManager:push("paid",
-                    string.format(g_i18n:getText("invoices_notif_paid"),
-                        self:formatMoney(amount), self:getFarmName(inv.fromFarmId)))
-                print("[RoleplayPhone] Invoice paid: #" .. tostring(inv.id))
-            else
-                NotificationManager:push("rejected", g_i18n:getText("invoices_insufficient_funds"))
-            end
-        end; return
-    end
-
-    -- Messages list: tap thread row → open that thread
-    if hb.id == "msg_thread_row" and hb.data and hb.data.index then
-        self.selectedContact = hb.data.index
-        self.unreadMessages[hb.data.index] = 0
-        self.messageCompose.text   = ""
-        self.messageCompose.active = false
-        self.messageScrollOffset   = 0
-        self.state = self.STATE.MESSAGE_THREAD; return
-    end
-
-    -- Contacts list row
-    if hb.id == "btn_add_unknown_contact" and type(self.selectedContact) == "string" then
-        local info = self.messageDisplayNames[self.selectedContact]
-        if info then
-            self:resetContactForm()
-            self.contactForm.name  = info.name  or ""
-            self.contactForm.phone = info.phone or ""
-            -- Pre-select the matching online player if still online
-            if info.userId and info.userId ~= 0 then
-                local onlineList = {}
-                local myUserId = self:getMyUserId()
-                for uid, uinfo in pairs(self.onlineUsers) do
-                    if uid ~= myUserId then
-                        table.insert(onlineList, { userId=uid, name=uinfo.name, phone=uinfo.phone, farmId=uinfo.farmId })
-                    end
-                end
-                table.sort(onlineList, function(a,b) return a.name < b.name end)
-                for idx, p in ipairs(onlineList) do
-                    if p.userId == info.userId then
-                        self.contactForm.playerPickerIdx = idx
-                        self.contactForm.playerUserId    = p.userId
-                        self.contactForm.phone           = p.phone or info.phone or ""
-                        self.contactForm.farmName        = self:getFarmName(p.farmId)
-                        break
-                    end
-                end
-            end
-            self.state = self.STATE.CONTACT_CREATE
-        end
-        return
-    end
-
-    -- Contacts list row
-    if hb.id == "contact_row" and hb.data and hb.data.index then
-        self.selectedContact = hb.data.index
-        self.unreadMessages[hb.data.index] = 0
-        self.messageCompose.text   = ""
-        self.messageCompose.active = false
-        self.state = self.STATE.CONTACT_DETAIL; return
-    end
-
-    if hb.id == "btn_add_contact" then
-        self:resetContactForm(); self.state = self.STATE.CONTACT_CREATE; return
-    end
-
-    -- Delete contact
-    if hb.id == "btn_delete_contact" then
-        if self.selectedContact then
-            local idx = self.selectedContact
-            if g_server == nil then
-                local myUserId = self:getMyUserId()
-                g_client:getServerConnection():sendEvent(
-                    RI_ContactEvent.new("delete", myUserId, idx, {}))
-            end
-            ContactManager:removeContact(idx)
-            self.selectedContact = nil
-            if g_server ~= nil then
-                local uniqueId = self:getMyUniqueId()
-                local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
-                local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
-                self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
-                    ContactManager.contacts, self.messages, self.callHistory)
-            end
-        end
-        self.state = self.STATE.CONTACTS; return
-    end
-
-    -- Contact create field focus
-    if hb.id == "cf_name"     then self.contactForm.activeField = "name";     return end
-    if hb.id == "cf_notes"    then self.contactForm.activeField = "notes";    return end
-
-    -- Contact create clear buttons
-    if hb.id == "cclear_name"     then self.contactForm.name     = ""; self.contactForm.activeField = "name";     return end
-    if hb.id == "cclear_notes"    then self.contactForm.notes    = ""; self.contactForm.activeField = "notes";    return end
-
-    -- Save contact
-    if hb.id == "btn_save_contact" then
-        local f = self.contactForm
-        if f.name and f.name ~= "" then
-            local data = { name=f.name, farmName=f.farmName, phone=f.phone, notes=f.notes, playerUserId=f.playerUserId or 0 }
-            ContactManager:addContact(data)
-            if g_server == nil then
-                g_client:getServerConnection():sendEvent(
-                    RI_ContactEvent.new("add", self:getMyUserId(), 0, data))
-            else
-                local uniqueId = self:getMyUniqueId()
-                local nickname = (g_currentMission and g_currentMission.playerNickname) or "host"
-                local entry    = self:getOrCreateRegistryEntry(uniqueId, self:hashPhone(self:getMyUserId()))
-                self:savePlayerData(self:buildPlayerFilename(nickname, entry.fileId),
-                    ContactManager.contacts, self.messages, self.callHistory)
-            end
-        end
-        self.contactForm.activeField = nil
-        self.state = self.STATE.CONTACTS; return
-    end
 
     -- Settings tabs
     if hb.id == "settings_tab_general"   then self.settingsTab = "general";   return end
@@ -487,33 +160,105 @@ function RoleplayPhone:onHitboxClicked(hb)
         self.settings.batteryVisible = not self.settings.batteryVisible
         self:saveSettings(); return
     end
-    -- Ringtone arrows
+    if hb.id == "setting_voicemode_toggle" and g_server ~= nil then
+        self.rpVoiceModeConfig = not (self.rpVoiceModeConfig or false)
+        self:saveServerConfig()
+        local state = self.rpVoiceModeConfig
+            and g_i18n:getText("settings_on")
+            or  g_i18n:getText("settings_off")
+        NotificationManager:push("info",
+            string.format(g_i18n:getText("settings_rp_voice_saved_fmt"), state))
+        return
+    end
+
+    -- Ringtone arrows + preview
     if hb.id == "ringtone_prev" then
         local n = #self.RINGTONES
-        self.settings.ringtoneIndex = ((self.settings.ringtoneIndex - 2) % n) + 1
-        self.ringSample = self.ringtoneSamples[self.settings.ringtoneIndex]
-        self:saveSettings(); return
+        local cur = self.previewRingtone or self.settings.ringtoneIndex
+        self.previewRingtone = ((cur - 2) % n) + 1; return
     end
     if hb.id == "ringtone_next" then
         local n = #self.RINGTONES
-        self.settings.ringtoneIndex = (self.settings.ringtoneIndex % n) + 1
-        self.ringSample = self.ringtoneSamples[self.settings.ringtoneIndex]
-        self:saveSettings(); return
+        local cur = self.previewRingtone or self.settings.ringtoneIndex
+        self.previewRingtone = (cur % n) + 1; return
+    end
+    if hb.id == "ringtone_apply" then
+        if self.previewRingtone then
+            self.settings.ringtoneIndex = self.previewRingtone
+            self.ringSample = self.ringtoneSamples[self.previewRingtone]
+            self:saveSettings()
+        end; return
     end
     if hb.id == "ringtone_preview" then
-        local s = self.ringtoneSamples[self.settings.ringtoneIndex]
-        if s and s ~= 0 then playSample(s, 1, 1.0, 1.0, 0, 0) end; return
+        -- Stop any currently-playing preview before starting a new one
+        for _, sample in ipairs(self.ringtoneSamples or {}) do
+            if sample and sample ~= 0 then stopSample(sample, 0, 0) end
+        end
+        local cur = self.previewRingtone or self.settings.ringtoneIndex
+        local s = self.ringtoneSamples[cur]
+        if s and s ~= 0 then playSample(s, 1, 1.0, 1.0, 0, 0) end
+        return
     end
 end
 
 function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
     if not isDown then return false end
 
+    -- Self-cleanup: exit TEXT_INPUT context if no text field is currently active.
+    -- Handles the case where a field was deactivated without calling deactivateTextInputContext.
+    if self._textInputContextActive then
+        local hasActiveField =
+            (self.form.activeField ~= nil      and self.state == self.STATE.INVOICE_CREATE) or
+            (self.contactForm.activeField ~= nil and self.state == self.STATE.CONTACT_CREATE) or
+            (self.messageCompose.active          and self.state == self.STATE.MESSAGE_THREAD)
+        if not hasActiveField then
+            self:deactivateTextInputContext()
+        end
+    end
+
     -- FS25 constants are lowercase (Input.KEY_backspace, not KEY_BackSpace)
     local isBackspace = (unicode == 8)
         or (Input.KEY_backspace ~= nil and sym == Input.KEY_backspace)
+    local isLeft   = sym == Input.KEY_left
+    local isRight  = sym == Input.KEY_right
+    local isHome   = sym == Input.KEY_home
+    local isEnd    = sym == Input.KEY_end
+    local isFwdDel = sym == Input.KEY_delete
+    local isCtrl   = bit32.band(modifier, Input.MOD_LCTRL) > 0
+    local isCtrlV  = isCtrl and sym == Input.KEY_v
+    local isCtrlA  = isCtrl and sym == Input.KEY_a
+    local isCtrlC  = isCtrl and sym == Input.KEY_c
 
-    -- Keypad digit entry (keyboard + numpad both send unicode 48-57)
+    -- Ensure cursor state is initialized for the given field value.
+    local function ensureCursor(val)
+        if not self.textCursor then self:activateFieldCursor(val) end
+    end
+
+    -- Delete the char before cursor (no selection). Returns new string.
+    -- Confirmed utf8Substr(str, start0, -1) = from start to end (FS25 TextInputElement pattern).
+    local function backspaceAt(val)
+        local p   = self.textCursor.pos
+        local len = utf8Strlen(val)
+        if p <= 1 then return val end
+        local before = (p - 1 > 1) and utf8Substr(val, 0, p - 2) or ""
+        local after  = (p - 1 < len) and utf8Substr(val, p - 1, -1) or ""
+        self.textCursor.pos = p - 1
+        self._cursorBlinkOrigin = getTimeSec()
+        return before .. after
+    end
+
+    -- Delete the char at cursor position (forward delete, no selection). Returns new string.
+    local function forwardDeleteAt(val)
+        local p   = self.textCursor.pos
+        local len = utf8Strlen(val)
+        if p > len then return val end
+        local before = (p > 1) and utf8Substr(val, 0, p - 1) or ""
+        local after  = (p < len) and utf8Substr(val, p, -1) or ""
+        self._cursorBlinkOrigin = getTimeSec()
+        return before .. after
+    end
+
+    -- ── Keypad digit entry (Calls dialer) ────────────────────────────────────
     if self.state == self.STATE.CALLS and (self.callsTab or "keypad") == "keypad" then
         if isBackspace then
             local n = self.keypadNumber or ""
@@ -529,52 +274,203 @@ function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
         return false
     end
 
-    -- Invoice create text input
+    -- ── Invoice create text fields ───────────────────────────────────────────
     if self.form.activeField and self.state == self.STATE.INVOICE_CREATE then
-        local field = self.form.activeField
-        local val   = self.form[field] or ""
-        if isBackspace then
-            if #val > 0 then self.form[field] = val:sub(1, #val - 1) end
-            return true
-        end
-        if unicode and unicode > 31 and unicode < 127 then
-            local maxLen = (field == "amount") and 10 or 200
-            if #val < maxLen then self.form[field] = val .. string.char(unicode) end
-            return true
-        end
+        local field  = self.form.activeField
+        local val    = self.form[field] or ""
+        local maxLen = (field == "amount") and 10 or 200
+
+        ensureCursor(val)
+
         if sym == Input.KEY_tab or sym == Input.KEY_return then
-            local order = { "amount", "dueDate", "description", "notes" }
+            local order = {"amount", "dueDate", "notes"}
             for i, f in ipairs(order) do
-                if f == field then self.form.activeField = order[i+1] or nil; break end
+                if f == field then
+                    self.form.activeField = order[i + 1] or nil
+                    if self.form.activeField then
+                        self:activateFieldCursor(self.form[self.form.activeField] or "")
+                    end
+                    break
+                end
             end
             return true
         end
+        if isCtrlA then
+            local len = utf8Strlen(val)
+            self.textCursor = {pos = len + 1, selStart = 1, selEnd = len + 1}
+            return true
+        end
+        if isLeft  then self:tcMoveCursor(val, -1, isCtrl); return true end
+        if isRight then self:tcMoveCursor(val,  1, isCtrl); return true end
+        if isHome  then
+            self.textCursor.pos = 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isEnd then
+            self.textCursor.pos = utf8Strlen(val) + 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isBackspace then
+            local s = self:getSelectionRange()
+            self.form[field] = s and self:tcDeleteSelection(val) or backspaceAt(val)
+            return true
+        end
+        if isFwdDel then
+            local s = self:getSelectionRange()
+            self.form[field] = s and self:tcDeleteSelection(val) or forwardDeleteAt(val)
+            return true
+        end
+        if isCtrlC then
+            local s, e = self:getSelectionRange()
+            RoleplayPhone._clipboard = s and utf8Substr(val, s-1, e-s) or val
+            return true
+        end
+        if isCtrlV and field ~= "amount" then
+            self.form[field] = self:tcInsert(val, RoleplayPhone._clipboard, maxLen)
+            return true
+        end
+        if unicode and unicode > 31 and (unicode < 127 or getCanRenderUnicode(unicode)) then
+            self.form[field] = self:tcInsert(val, unicodeToUtf8(unicode), maxLen)
+            return true
+        end
+        return false
     end
 
-    -- Contact create text input
+    -- ── Contact create/edit text fields ──────────────────────────────────────
     if self.contactForm.activeField and self.state == self.STATE.CONTACT_CREATE then
         local field = self.contactForm.activeField
         local val   = self.contactForm[field] or ""
+
+        ensureCursor(val)
+
+        if sym == Input.KEY_tab or sym == Input.KEY_return then
+            local order = {"name", "phone", "role", "notes"}
+            for i, f in ipairs(order) do
+                if f == field then
+                    self.contactForm.activeField = order[i + 1] or nil
+                    if self.contactForm.activeField then
+                        self:activateFieldCursor(self.contactForm[self.contactForm.activeField] or "")
+                    end
+                    break
+                end
+            end
+            return true
+        end
+
+        if field == "phone" then
+            -- Digits only, auto-formatted — no mid-string cursor (display changes on every digit)
+            local digits    = val:gsub("[^%d]", "")
+            local maxDigits = self:getMaxKeypadDigits()
+            if isBackspace then
+                if #digits > 0 then
+                    digits = digits:sub(1, #digits - 1)
+                    self.contactForm.phone = self:formatKeypadDisplay(digits)
+                    self:activateFieldCursor(self.contactForm.phone)
+                end
+            elseif unicode and unicode >= 48 and unicode <= 57 then
+                if #digits < maxDigits then
+                    digits = digits .. string.char(unicode)
+                    self.contactForm.phone = self:formatKeypadDisplay(digits)
+                    self:activateFieldCursor(self.contactForm.phone)
+                end
+            end
+            return true
+        end
+
+        if isCtrlA then
+            local len = utf8Strlen(val)
+            self.textCursor = {pos = len + 1, selStart = 1, selEnd = len + 1}
+            return true
+        end
+        if isLeft  then self:tcMoveCursor(val, -1, isCtrl); return true end
+        if isRight then self:tcMoveCursor(val,  1, isCtrl); return true end
+        if isHome  then
+            self.textCursor.pos = 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isEnd then
+            self.textCursor.pos = utf8Strlen(val) + 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
         if isBackspace then
-            if #val > 0 then self.contactForm[field] = val:sub(1, #val - 1) end
+            local s = self:getSelectionRange()
+            self.contactForm[field] = s and self:tcDeleteSelection(val) or backspaceAt(val)
             return true
         end
-        if unicode and unicode > 31 and unicode < 127 then
-            if #val < 60 then self.contactForm[field] = val .. string.char(unicode) end
+        if isFwdDel then
+            local s = self:getSelectionRange()
+            self.contactForm[field] = s and self:tcDeleteSelection(val) or forwardDeleteAt(val)
             return true
         end
+        if isCtrlC then
+            local s, e = self:getSelectionRange()
+            RoleplayPhone._clipboard = s and utf8Substr(val, s-1, e-s) or val
+            return true
+        end
+        if isCtrlV then
+            self.contactForm[field] = self:tcInsert(val, RoleplayPhone._clipboard, 60)
+            return true
+        end
+        if unicode and unicode > 31 and (unicode < 127 or getCanRenderUnicode(unicode)) then
+            self.contactForm[field] = self:tcInsert(val, unicodeToUtf8(unicode), 60)
+            return true
+        end
+        return false
     end
 
-    -- Message compose text input
+    -- ── Message compose ──────────────────────────────────────────────────────
     if self.messageCompose.active and self.state == self.STATE.MESSAGE_THREAD then
         local val = self.messageCompose.text or ""
-        if isBackspace then
-            if #val > 0 then self.messageCompose.text = val:sub(1, #val - 1) end
+
+        ensureCursor(val)
+
+        if sym == Input.KEY_return then
+            self:sendMessage()
+            self:activateFieldCursor("")  -- sendMessage clears text; reset cursor to pos 1
             return true
         end
-        if sym == Input.KEY_return then self:sendMessage(); return true end
-        if unicode and unicode > 31 and unicode < 127 then
-            if #val < 120 then self.messageCompose.text = val .. string.char(unicode) end
+        if isCtrlA then
+            local len = utf8Strlen(val)
+            self.textCursor = {pos = len + 1, selStart = 1, selEnd = len + 1}
+            return true
+        end
+        if isLeft  then self:tcMoveCursor(val, -1, isCtrl); return true end
+        if isRight then self:tcMoveCursor(val,  1, isCtrl); return true end
+        if isHome  then
+            self.textCursor.pos = 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isEnd then
+            self.textCursor.pos = utf8Strlen(val) + 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isBackspace then
+            local s = self:getSelectionRange()
+            self.messageCompose.text = s and self:tcDeleteSelection(val) or backspaceAt(val)
+            return true
+        end
+        if isFwdDel then
+            local s = self:getSelectionRange()
+            self.messageCompose.text = s and self:tcDeleteSelection(val) or forwardDeleteAt(val)
+            return true
+        end
+        if isCtrlC then
+            local s, e = self:getSelectionRange()
+            RoleplayPhone._clipboard = s and utf8Substr(val, s-1, e-s) or val
+            return true
+        end
+        if isCtrlV then
+            self.messageCompose.text = self:tcInsert(val, RoleplayPhone._clipboard, 300)
+            return true
+        end
+        if unicode and unicode > 31 and (unicode < 127 or getCanRenderUnicode(unicode)) then
+            self.messageCompose.text = self:tcInsert(val, unicodeToUtf8(unicode), 300)
             return true
         end
     end
@@ -582,20 +478,131 @@ function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
     return false
 end
 
-function RoleplayPhone:handleBackspace()
-    if self.state == self.STATE.CALLS and (self.callsTab or "keypad") == "keypad" then
-        local n = self.keypadNumber or ""
-        if #n > 0 then self.keypadNumber = n:sub(1, #n - 1) end
-    elseif self.state == self.STATE.INVOICE_CREATE and self.form.activeField then
-        local f = self.form.activeField
-        local v = self.form[f] or ""
-        if #v > 0 then self.form[f] = v:sub(1, #v - 1) end
-    elseif self.state == self.STATE.CONTACT_CREATE and self.contactForm.activeField then
-        local f = self.contactForm.activeField
-        local v = self.contactForm[f] or ""
-        if #v > 0 then self.contactForm[f] = v:sub(1, #v - 1) end
-    elseif self.state == self.STATE.MESSAGE_THREAD and self.messageCompose.active then
-        local v = self.messageCompose.text or ""
-        if #v > 0 then self.messageCompose.text = v:sub(1, #v - 1) end
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TEXT CURSOR HELPERS
+-- Used by keyEvent and drawField. textCursor is shared state on RoleplayPhone.
+-- cursorPos is 1-based: 1 = before first char, len+1 = after last char.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Call when activating a text field. Resets cursor to end of current value.
+function RoleplayPhone:activateFieldCursor(val)
+    local len = utf8Strlen(val or "")
+    self.textCursor = { pos = len + 1, selStart = nil, selEnd = nil }
+    self._cursorBlinkOrigin = getTimeSec()
+    -- Enter TEXT_INPUT context when a field becomes active.
+    -- This tells the engine to stop intercepting Ctrl+V at the C++ level
+    -- so it reaches our addModEventListener:keyEvent. Stacks on RI_PHONE_UI.
+    if not self._textInputContextActive then
+        g_inputBinding:setContext("TEXT_INPUT", true, false)
+        self._textInputContextActive = true
+        print("[RoleplayPhone] TEXT_INPUT context activated")
     end
+end
+
+-- Exits TEXT_INPUT context when no text field is active.
+function RoleplayPhone:deactivateTextInputContext()
+    if self._textInputContextActive then
+        g_inputBinding:revertContext(true)
+        self._textInputContextActive = false
+        print("[RoleplayPhone] TEXT_INPUT context deactivated")
+    end
+end
+
+-- Places cursor at the character position closest to clickX in a single-line field.
+-- fieldTextStartX = hb.x + textPad (textPad is 0.004 in drawField).
+-- textSize = 0.012 (drawField constant). For long trimmed fields placement is approximate.
+function RoleplayPhone:placeCursorAtX(val, fieldTextStartX, textSize, clickX)
+    local offset = math.max(0, clickX - fieldTextStartX)
+    local len    = utf8Strlen(val or "")
+    for i = 1, len do
+        local w = getTextWidth(textSize, utf8Substr(val, 0, i))
+        if w >= offset then
+            local prevW = i > 1 and getTextWidth(textSize, utf8Substr(val, 0, i - 1)) or 0
+            local pos   = ((offset - prevW) < (w - offset)) and i or (i + 1)
+            self.textCursor         = { pos = pos, selStart = nil, selEnd = nil }
+            self._cursorBlinkOrigin = getTimeSec()
+            return
+        end
+    end
+    -- Click past end of text → cursor at end
+    self.textCursor         = { pos = len + 1, selStart = nil, selEnd = nil }
+    self._cursorBlinkOrigin = getTimeSec()
+end
+
+-- Returns true when the cursor rect should be drawn (blink on/off).
+function RoleplayPhone:isCursorBlinkVisible()
+    local elapsed = getTimeSec() - (self._cursorBlinkOrigin or 0)
+    return (elapsed % 0.8) < 0.4
+end
+
+-- Returns ordered selection range (sMin, sMax) or (nil, nil) if no selection.
+function RoleplayPhone:getSelectionRange()
+    local c = self.textCursor
+    if c and c.selStart and c.selEnd and c.selStart ~= c.selEnd then
+        return math.min(c.selStart, c.selEnd), math.max(c.selStart, c.selEnd)
+    end
+    return nil, nil
+end
+
+-- Deletes the active selection from val. Returns (newVal, true) or (val, false).
+function RoleplayPhone:tcDeleteSelection(val)
+    local s, e = self:getSelectionRange()
+    if not s then return val, false end
+    local before = s > 1 and utf8Substr(val, 0, s-1) or ""
+    local after  = e <= utf8Strlen(val) and utf8Substr(val, e-1) or ""
+    self.textCursor = { pos = s, selStart = nil, selEnd = nil }
+    return before .. after, true
+end
+
+-- Inserts str at cursor position (or replaces selection). Respects maxLen char limit.
+function RoleplayPhone:tcInsert(val, str, maxLen)
+    local newVal, _ = self:tcDeleteSelection(val)
+    local pos    = self.textCursor.pos
+    local len    = utf8Strlen(newVal)
+    local strLen = utf8Strlen(str)
+    if maxLen then
+        local remaining = maxLen - len
+        if remaining <= 0 then return newVal end
+        if strLen > remaining then str = utf8Substr(str, 0, remaining); strLen = utf8Strlen(str) end
+    end
+    local before = pos > 1 and utf8Substr(newVal, 0, pos-1) or ""
+    local after  = pos <= len and utf8Substr(newVal, pos-1) or ""
+    self.textCursor.pos      = pos + strLen
+    self.textCursor.selStart = nil
+    self.textCursor.selEnd   = nil
+    self._cursorBlinkOrigin  = getTimeSec()
+    return before .. str .. after
+end
+
+-- Moves cursor left (dir=-1) or right (dir=1). isCtrl = word jump.
+-- Clears selection on movement (shift-selection not yet implemented).
+function RoleplayPhone:tcMoveCursor(val, dir, isCtrl)
+    local c   = self.textCursor
+    local len = utf8Strlen(val or "")
+    local newPos
+
+    if dir < 0 then  -- left
+        if isCtrl then
+            local pos = c.pos
+            while pos > 1 and utf8Substr(val, pos-2, 1) == " " do pos = pos - 1 end
+            while pos > 1 and utf8Substr(val, pos-2, 1) ~= " " do pos = pos - 1 end
+            newPos = pos
+        else
+            newPos = math.max(1, c.pos - 1)
+        end
+    else  -- right
+        if isCtrl then
+            local pos = c.pos
+            while pos <= len and utf8Substr(val, pos-1, 1) ~= " " do pos = pos + 1 end
+            while pos <= len and utf8Substr(val, pos-1, 1) == " " do pos = pos + 1 end
+            newPos = pos
+        else
+            newPos = math.min(len + 1, c.pos + 1)
+        end
+    end
+
+    c.selStart = nil
+    c.selEnd   = nil
+    c.pos      = newPos
+    self._cursorBlinkOrigin = getTimeSec()
 end

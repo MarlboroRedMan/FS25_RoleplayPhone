@@ -1,4 +1,4 @@
-﻿function RoleplayPhone:drawInvoicesList()
+function RoleplayPhone:drawInvoicesList()
     local s        = self.BIG
     local px       = s.x
     local py       = s.y
@@ -121,6 +121,12 @@
     end
 end
 
+-- Helper: return localized status label (only PENDING has an l10n key; others use raw enum)
+local function localizedStatusLabel(status)
+    if status == "PENDING" then return g_i18n:getText("invoices_status_pending") end
+    return status or g_i18n:getText("invoices_status_pending")
+end
+
 -- Draw a single invoice row
 function RoleplayPhone:drawInvoiceRow(inv, x, y, w, h, index)
     -- Row background (alternating slight shade)
@@ -137,7 +143,7 @@ function RoleplayPhone:drawInvoiceRow(inv, x, y, w, h, index)
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(false)
     setTextColor(1, 1, 1, 1)
-    renderText(badgeX + badgeW/2, badgeY + 0.004, 0.009, inv.status or "PENDING")
+    renderText(badgeX + badgeW/2, badgeY + 0.004, 0.009, localizedStatusLabel(inv.status))
 
     -- Invoice # and date
     local indent = 0.010 * self.arScale
@@ -201,7 +207,7 @@ function RoleplayPhone:drawInvoiceDetail()
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(true)
     setTextColor(1, 1, 1, 1)
-    renderText(px + pw/2, bannerY + 0.010, 0.016, inv.status or g_i18n:getText("invoices_status_pending"))
+    renderText(px + pw/2, bannerY + 0.010, 0.016, localizedStatusLabel(inv.status))
 
     -- Detail fields
     local fieldX = px + 0.020
@@ -224,35 +230,7 @@ function RoleplayPhone:drawInvoiceDetail()
         local textSize = 0.012
         local textPad  = 0.004
         local maxWidth = fieldW - textPad * 2
-        local function splitWord(word)
-            local chunks = {}
-            while getTextWidth(textSize, word) > maxWidth do
-                local i = 1
-                while i < #word and getTextWidth(textSize, word:sub(1, i+1)) <= maxWidth do i = i + 1 end
-                table.insert(chunks, word:sub(1, i)); word = word:sub(i + 1)
-            end
-            table.insert(chunks, word); return chunks
-        end
-        local words = {}
-        local str   = tostring(value or "-")
-        for word in str:gmatch("%S+") do table.insert(words, word) end
-        local lines = {}
-        local cur = ""
-        for _, word in ipairs(words) do
-            local wordChunks = (getTextWidth(textSize, word) > maxWidth) and splitWord(word) or {word}
-            for ci, chunk in ipairs(wordChunks) do
-                if ci > 1 then
-                    table.insert(lines, cur); cur = chunk
-                elseif cur == "" then
-                    cur = chunk
-                elseif getTextWidth(textSize, cur .. " " .. chunk) <= maxWidth then
-                    cur = cur .. " " .. chunk
-                else
-                    table.insert(lines, cur); cur = chunk
-                end
-            end
-        end
-        table.insert(lines, cur)
+        local lines = self:wrapText(tostring(value or "-"), textSize, maxWidth)
         local boxH = math.max(0.036, #lines * lineH + 0.024)
         curY = curY - boxH
         self:drawRect(fieldX, curY, fieldW, boxH, 0.10, 0.13, 0.19, 1.0)
@@ -418,8 +396,6 @@ function RoleplayPhone:drawCreateInvoice()
     self:drawField("field_notes", col1X, curY, colW, notesH,
                    g_i18n:getText("invoices_field_notes_label"), self.form.notes,
                    self.form.activeField == "notes", true)
-
-    -- ── Send button ──
 end
 
 -- ─── Mouse event ──────────────────────────────────────────────────────────────
@@ -510,6 +486,7 @@ function RoleplayPhone:resetForm()
     self.form.notes         = ""
     self.form.dueDate       = ""
     self.form.activeField   = nil
+    self.form.scrollOffset  = 0
 end
 
 -- ─── Key event ────────────────────────────────────────────────────────────────

@@ -1,3 +1,22 @@
+-- ─── Condition lookup tables (module-scope — built once, not per frame) ──────
+local COND_MAP = {
+    [0]="Clear",[1]="Cloudy",[2]="Rain",[3]="Storm",[4]="Fog",[5]="Snow",
+    SUN="Clear", CLOUDY="Cloudy", RAIN="Rain", RAIN_LIGHT="Rain", RAIN_HEAVY="Rain",
+    HAIL="Hail", SNOW="Snow", SNOW_DUST="Snow", SNOW_WINDY="Snow",
+    STORM="Storm", THUNDER="Storm", TWISTER="Twister",
+    DUST="Dust", DUST_WINDY="Dust", FOG="Fog",
+}
+local COND_COLOR = {
+    Clear={1.00,0.88,0.30}, Cloudy={0.72,0.76,0.85}, Rain={0.45,0.65,0.90},
+    Storm={0.50,0.55,0.85}, Snow={0.85,0.92,1.00},   Hail={0.60,0.80,0.95},
+    Fog={0.75,0.80,0.88},   Dust={0.80,0.70,0.45},   Twister={0.70,0.40,0.80},
+}
+local COND_L10N = {
+    Clear="weather_cond_clear",   Cloudy="weather_cond_cloudy", Rain="weather_cond_rain",
+    Storm="weather_cond_storm",   Snow="weather_cond_snow",     Hail="weather_cond_hail",
+    Fog="weather_cond_fog",       Dust="weather_cond_dust",     Twister="weather_cond_twister",
+}
+
 function RoleplayPhone:drawWeatherApp()
     local s  = self.BIG
     local px = s.x;  local py = s.y
@@ -59,23 +78,24 @@ function RoleplayPhone:drawWeatherApp()
         if humidity and humidity > 1.0 then humidity = humidity / 100 end
     end
 
-    -- Condition string, color, and ASCII symbol
-    local condStr, condColor, condSymbol
+    -- Condition string, color, and icon key
+    local condStr, condColor, condKey
     if isHailing then
-        condStr=g_i18n:getText("weather_cond_hail");         condColor={0.60,0.80,0.95}; condSymbol="[o o]"
+        condStr=g_i18n:getText("weather_cond_hail");         condColor={0.60,0.80,0.95}; condKey="Hail"
     elseif isSnowing then
-        condStr=g_i18n:getText("weather_cond_snow");         condColor={0.85,0.92,1.00}; condSymbol="[* *]"
+        condStr=g_i18n:getText("weather_cond_snow");         condColor={0.85,0.92,1.00}; condKey="Snow"
     elseif rainScale>0.70 then
-        condStr=g_i18n:getText("weather_cond_thunderstorm"); condColor={0.40,0.45,0.75}; condSymbol="[/!/]"
+        condStr=g_i18n:getText("weather_cond_thunderstorm"); condColor={0.40,0.45,0.75}; condKey="Storm"
+    elseif rainScale>0.50 then
+        condStr=g_i18n:getText("weather_cond_heavy_rain");   condColor={0.40,0.60,0.90}; condKey="HeavyRain"
     elseif rainScale>0.05 then
-        condStr = rainScale>0.50 and g_i18n:getText("weather_cond_heavy_rain") or g_i18n:getText("weather_cond_rain")
-                                condColor={0.40,0.60,0.90}; condSymbol="[~~~]"
+        condStr=g_i18n:getText("weather_cond_rain");         condColor={0.40,0.60,0.90}; condKey="Rain"
     elseif cloudCover>0.70 then
-        condStr=g_i18n:getText("weather_cond_overcast");     condColor={0.70,0.75,0.85}; condSymbol="[###]"
+        condStr=g_i18n:getText("weather_cond_overcast");     condColor={0.70,0.75,0.85}; condKey="Cloudy"
     elseif cloudCover>0.30 then
-        condStr=g_i18n:getText("weather_cond_partly_cloudy");condColor={0.85,0.88,0.95}; condSymbol="[*~#]"
+        condStr=g_i18n:getText("weather_cond_partly_cloudy");condColor={0.85,0.88,0.95}; condKey="PartlyCloudy"
     else
-        condStr=g_i18n:getText("weather_cond_clear");        condColor={1.00,0.88,0.30}; condSymbol="[***]"
+        condStr=g_i18n:getText("weather_cond_clear");        condColor={1.00,0.88,0.30}; condKey="Clear"
     end
 
     local function fmtTemp(c)
@@ -91,16 +111,23 @@ function RoleplayPhone:drawWeatherApp()
     self:drawRect(cardX,cardY,cardW,cardH,0.08,0.13,0.20,1.0)
     self:drawRect(cardX,cardY+cardH-0.004,cardW,0.004,condColor[1],condColor[2],condColor[3],0.90)
 
-    -- ASCII condition symbol (left side, big)
+    -- Weather condition icon (small, top-left of card)
+    local condIcon = self.weatherIcons and self.weatherIcons[condKey]
+    local iconSz   = 0.028 * self.arScale
+    local iconH    = iconSz * self.actualAR
+    local iconX    = cardX + 0.008
+    local iconY    = cardY + cardH - iconH - 0.010
+    if condIcon and condIcon ~= 0 then
+        setOverlayColor(condIcon, 1, 1, 1, 0.95)
+        renderOverlay(condIcon, iconX, iconY, iconSz, iconH)
+    end
+
+    -- Condition label (right of icon, same row)
     setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
-    setTextColor(condColor[1],condColor[2],condColor[3],0.70)
-    renderText(cardX+0.008, cardY+cardH-0.030, 0.013, condSymbol)
-
-    -- Condition label
     setTextColor(condColor[1],condColor[2],condColor[3],0.95)
-    renderText(cardX+0.008, cardY+cardH-0.052, 0.010, condStr)
+    renderText(iconX + iconSz + 0.006, iconY + iconH * 0.20, 0.011, condStr)
 
-    -- Big temperature
+    -- Big temperature (below icon)
     setTextBold(true); setTextColor(1,1,1,1)
     renderText(cardX+0.008, cardY+cardH-0.100, 0.034, fmtTemp(tempC))
     setTextBold(false)
@@ -137,25 +164,6 @@ function RoleplayPhone:drawWeatherApp()
     setTextColor(0.55,0.70,0.90,0.85)
     renderText(cardX+0.008, fcastY, 0.010, g_i18n:getText("weather_section_forecast")); setTextBold(false)
 
-    -- Condition maps
-    local COND_MAP = {
-        [0]="Clear",[1]="Cloudy",[2]="Rain",[3]="Storm",[4]="Fog",[5]="Snow",
-        SUN="Clear", CLOUDY="Cloudy", RAIN="Rain", RAIN_LIGHT="Rain", RAIN_HEAVY="Rain",
-        HAIL="Hail", SNOW="Snow", SNOW_DUST="Snow", SNOW_WINDY="Snow",
-        STORM="Storm", THUNDER="Storm", TWISTER="Twister",
-        DUST="Dust", DUST_WINDY="Dust", FOG="Fog",
-    }
-    local COND_COLOR = {
-        Clear={1.00,0.88,0.30}, Cloudy={0.72,0.76,0.85}, Rain={0.45,0.65,0.90},
-        Storm={0.50,0.55,0.85}, Snow={0.85,0.92,1.00},   Hail={0.60,0.80,0.95},
-        Fog={0.75,0.80,0.88},   Dust={0.80,0.70,0.45},   Twister={0.70,0.40,0.80},
-    }
-    -- Maps COND_MAP internal keys to l10n keys for forecast label rendering
-    local COND_L10N = {
-        Clear="weather_cond_clear",   Cloudy="weather_cond_cloudy", Rain="weather_cond_rain",
-        Storm="weather_cond_storm",   Snow="weather_cond_snow",     Hail="weather_cond_hail",
-        Fog="weather_cond_fog",       Dust="weather_cond_dust",     Twister="weather_cond_twister",
-    }
     local function resolveCondition(entry)
         local raw = entry.weatherType or entry.conditionType or entry.condition
                     or entry.type or entry.name or entry.typeName

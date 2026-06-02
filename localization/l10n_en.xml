@@ -45,6 +45,7 @@
     <text name="phone_notif_farm_not_found"     text="Can&apos;t find farm &apos;%s&apos; online."/>
     <text name="phone_notif_cant_reach"         text="Can&apos;t reach &apos;%s&apos; - are they online?"/>
     <text name="phone_notif_call_declined"      text="Call declined."/>
+    <text name="phone_notif_call_busy"          text="%s is on another call."/>
     <text name="phone_notif_missed_call"        text="Missed call from %s"/>
     <text name="phone_notif_insufficient_funds" text="Insufficient funds to pay this invoice."/>
     <text name="phone_notif_paid"               text="Paid $%s to %s"/>
@@ -146,6 +147,7 @@
     <text name="invoices_notif_no_recipient"   text="No recipient farm selected."/>
     <text name="invoices_notif_own_farm"       text="Can&apos;t invoice your own farm."/>
     <text name="invoices_notif_sent_fmt"       text="Invoice for $%s sent to %s"/>
+    <text name="invoices_notif_paid"           text="Paid $%s to %s"/>
 
     <!-- ContactsApp — screen titles -->
     <text name="screen_title_contacts"       text="Contacts"/>
@@ -157,7 +159,7 @@
     <!-- ContactsApp — list view -->
     <text name="contacts_btn_add"     text="+ Add"/>
     <text name="contacts_my_profile_label" text="My Profile"/>
-    <text name="contacts_empty_state" text="No contacts yet.  Tap  + Add  to save one."/>
+    <text name="contacts_empty_state" text="No contacts yet. Add them in the Contacts app."/>
     <text name="contacts_no_farm"     text="No farm"/>
 
     <!-- ContactsApp — detail view -->
@@ -165,6 +167,7 @@
     <text name="contacts_label_notes" text="NOTES"/>
     <text name="contacts_btn_call"    text="Call"/>
     <text name="contacts_btn_message" text="Message"/>
+    <text name="contacts_btn_edit"    text="Edit Contact"/>
     <text name="contacts_btn_delete"  text="Delete Contact"/>
 
     <!-- ContactsApp — create / edit form -->
@@ -172,6 +175,8 @@
     <text name="contacts_field_player"    text="PLAYER"/>
     <text name="contacts_no_players_online" text="No other players online"/>
     <text name="contacts_field_farm_name" text="Farm Name"/>
+    <text name="contacts_field_role"     text="Role / Job"/>
+    <text name="contacts_label_role"     text="ROLE"/>
     <text name="contacts_field_phone"     text="Phone (RP #)"/>
     <text name="contacts_field_notes"     text="Notes"/>
     <text name="contacts_validation_name" text="Name is required"/>
@@ -184,6 +189,13 @@
     <text name="contacts_msg_empty"       text="No messages yet."/>
     <text name="contacts_msg_prompt"      text="Say something!"/>
     <text name="contacts_btn_send"        text="Send"/>
+    <text name="contacts_saved_notif"     text="%s saved to Contacts"/>
+
+    <!-- MessagesApp — contact card sharing -->
+    <text name="msg_share_card"  text="Card"/>
+    <text name="msg_card_save"   text="Save"/>
+    <text name="msg_card_saved"  text="Saved"/>
+    <text name="msg_contact_card_preview" text="[Contact Card]"/>
 
     <!-- CallsApp -->
     <text name="call_status_calling"  text="Calling..."/>
@@ -200,6 +212,8 @@
     <text name="calls_tab_recents"    text="Recents"/>
     <text name="calls_tab_contacts"   text="Contacts"/>
     <text name="calls_btn_call"       text="Call"/>
+    <text name="calls_btn_msg"        text="Msg"/>
+    <text name="ui_btn_new_msg"       text="+ New"/>
     <text name="keypad_hint"          text="Enter number..."/>
     <text name="calls_empty"          text="No recent calls."/>
     <text name="calls_dir_missed"     text="Missed"/>
@@ -222,6 +236,10 @@
     <text name="settings_temp_f"              text="°F"/>
     <text name="settings_temp_c"              text="°C"/>
     <text name="settings_battery_widget"      text="BATTERY WIDGET"/>
+    <text name="settings_rp_voice_mode"       text="RP VOICE MODE"/>
+    <text name="settings_rp_voice_hint"       text="Mic off unless on a call"/>
+    <text name="settings_rp_voice_restart"    text="Restart to apply"/>
+    <text name="settings_rp_voice_saved_fmt"  text="RP Voice: %s — restart to apply"/>
     <text name="settings_on"                  text="ON"/>
     <text name="settings_off"                 text="OFF"/>
     <text name="settings_applied"             text="Applied"/>

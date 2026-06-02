@@ -55,7 +55,7 @@ function InvoiceSave:loadFromXML(xmlFile, key)
         }
 
         local inv = Invoice.new(data)
-        InvoiceManager:addInvoice(inv)
+        InvoiceManager.invoices[inv.id] = inv  -- direct assignment avoids any future side effects in addInvoice
         if inv.id and inv.id > maxId then maxId = inv.id end
         i = i + 1
     end

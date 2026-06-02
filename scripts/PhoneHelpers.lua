@@ -79,6 +79,15 @@ function RoleplayPhone:getContactNameByPhone(phone)
     return nil
 end
 
+-- Returns the contact table AND its index for a given phone number, or nil, nil.
+function RoleplayPhone:getContactByPhone(phone)
+    if not phone or phone == "" then return nil, nil end
+    for i, c in ipairs(ContactManager.contacts) do
+        if c.phone == phone then return c, i end
+    end
+    return nil, nil
+end
+
 -- PHONE_FORMATS keyed by mapId.
 -- digits = total digit count that hashPhone generates (no dashes).
 -- format = how to display those digits (X = digit placeholder).
@@ -285,7 +294,27 @@ function RoleplayPhone:getAvailableFarms()
     return result
 end
 
-function RoleplayPhone:clearFarmCache() self._farmCache = nil end
+function RoleplayPhone:clearFarmCache()
+    self._farmCache       = nil
+    self.cachedFarmId     = nil
+    self.cachedFarmIdTime = nil
+end
+
+-- ─── Avatar color palette ─────────────────────────────────────────────────────
+-- Returns a consistent RGB color for a contact name via simple hash lookup.
+-- Replaces the single hardcoded blue so each contact gets a distinct colour.
+local AVATAR_COLORS = {
+    {0.12, 0.28, 0.58}, {0.42, 0.18, 0.58}, {0.18, 0.48, 0.32},
+    {0.58, 0.32, 0.18}, {0.58, 0.18, 0.42}, {0.18, 0.42, 0.58},
+    {0.48, 0.42, 0.18}, {0.32, 0.32, 0.32},
+}
+function RoleplayPhone:getAvatarColor(name)
+    local h = 0
+    for i = 1, math.min(#(name or ""), 8) do
+        h = (h * 31 + name:byte(i)) % #AVATAR_COLORS
+    end
+    return AVATAR_COLORS[h + 1]
+end
 
 function RoleplayPhone:isFarmManager()
     if not g_currentMission then return false end
@@ -332,7 +361,14 @@ function RoleplayPhone:updateCallTimeout(dt)
         if self.state == self.STATE.CALL_INCOMING then
             local name = self.call.contactName or g_i18n:getText("phone_unknown_contact")
             NotificationManager:push("info", string.format(g_i18n:getText("phone_notif_missed_call"), name))
-            table.insert(self.callHistory, 1, { direction="missed", name=name, gameTime=(g_currentMission and g_currentMission.environment and g_currentMission.environment.dayTime) or 0 })
+            -- Route through addCallHistoryEntry so gameDay/gameTime and stacking logic are applied
+            self:addCallHistoryEntry("missed", name, self.call.contactNum or "")
+            -- Tell the host to store this missed call in our playerCalls so it persists.
+            -- Only send from a real client — listen-server host has no client to send to.
+            if g_client ~= nil and g_server == nil then
+                g_client:getServerConnection():sendEvent(
+                    RI_CallEvent.new("missed", myUserId, myUserId, name, self.call.contactNum or ""))
+            end
         end
         self:_restoreAfterCall()
     end
@@ -381,7 +417,8 @@ function RoleplayPhone:formatMoney(n)
 end
 
 function RoleplayPhone:getCallActionKeyName()
-    local result = "F8"
+    if self._cachedCallKeyName then return self._cachedCallKeyName end
+    local result = "F10"
     local xmlPath = getUserProfileAppPath() .. "inputBinding.xml"
     local xmlFile = loadXMLFile("RP_InputBinding", xmlPath)
     if not xmlFile or xmlFile == 0 then return result end
@@ -399,6 +436,31 @@ function RoleplayPhone:getCallActionKeyName()
         i = i + 1
     end
     delete(xmlFile)
+    self._cachedCallKeyName = result
+    return result
+end
+
+function RoleplayPhone:getDeclineActionKeyName()
+    if self._cachedDeclineKeyName then return self._cachedDeclineKeyName end
+    local result = "F9"
+    local xmlPath = getUserProfileAppPath() .. "inputBinding.xml"
+    local xmlFile = loadXMLFile("RP_InputBinding", xmlPath)
+    if not xmlFile or xmlFile == 0 then return result end
+    local i = 0
+    while true do
+        local key = string.format("inputBinding.actionBinding(%d)", i)
+        if not hasXMLProperty(xmlFile, key) then break end
+        local action = getXMLString(xmlFile, key .. "#action")
+        if action == "RI_DECLINE_ACTION" then
+            local input = getXMLString(xmlFile, key .. ".binding(0)#input") or ""
+            local name = input:match("^KEY_(.+)$")
+            if name then result = name:upper() end
+            break
+        end
+        i = i + 1
+    end
+    delete(xmlFile)
+    self._cachedDeclineKeyName = result
     return result
 end
 
@@ -457,7 +519,10 @@ end
 function RoleplayPhone:loadPlayerRegistry()
     local dir = self:getSaveDir()
     if not dir then return {} end
-    local xmlFile = loadXMLFile("roleplayRegistryXML", dir .. "/roleplayers.xml")
+    local path = dir .. "/roleplayers.xml"
+    if not fileExists(path) then return {} end
+    local handleName = "roleplayRegistry_" .. tostring(math.floor(getTime() * 1000))
+    local xmlFile = loadXMLFile(handleName, path)
     if not xmlFile or xmlFile == 0 then return {} end
 
     local registry = {}
@@ -468,8 +533,9 @@ function RoleplayPhone:loadPlayerRegistry()
         if uniqueId == nil then break end
         table.insert(registry, {
             uniqueId = uniqueId,
-            fileId   = getXMLString(xmlFile, key .. "#fileId") or "",
-            phone    = getXMLString(xmlFile, key .. "#phone")  or "",
+            fileId   = getXMLString(xmlFile, key .. "#fileId")    or "",
+            phone    = getXMLString(xmlFile, key .. "#phone")     or "",
+            nickname = getXMLString(xmlFile, key .. "#nickname")  or "",
         })
         i = i + 1
     end
@@ -478,10 +544,22 @@ function RoleplayPhone:loadPlayerRegistry()
 end
 
 -- Saves the registry table back to roleplayers.xml.
+-- Always merges with cachedRegistry so offline players are never dropped.
 function RoleplayPhone:savePlayerRegistry(registry)
+    -- Merge: add any cached entries not already in the registry being saved
+    if RoleplayPhone.cachedRegistry then
+        local seen = {}
+        for _, entry in ipairs(registry) do seen[entry.uniqueId] = true end
+        for _, cached in ipairs(RoleplayPhone.cachedRegistry) do
+            if not seen[cached.uniqueId] then
+                table.insert(registry, cached)
+            end
+        end
+    end
     local dir = self:getSaveDir()
     if not dir then return end
-    local xmlFile = createXMLFile("roleplayRegistryXML", dir .. "/roleplayers.xml", "roleplayers")
+    local handleName = "roleplayRegistry_" .. tostring(math.floor(getTime() * 1000))
+    local xmlFile = createXMLFile(handleName, dir .. "/roleplayers.xml", "roleplayers")
     if not xmlFile or xmlFile == 0 then return end
 
     for i, entry in ipairs(registry) do
@@ -489,30 +567,42 @@ function RoleplayPhone:savePlayerRegistry(registry)
         setXMLString(xmlFile, key .. "#uniqueId", entry.uniqueId or "")
         setXMLString(xmlFile, key .. "#fileId",   entry.fileId   or "")
         setXMLString(xmlFile, key .. "#phone",    entry.phone    or "")
+        setXMLString(xmlFile, key .. "#nickname", entry.nickname or "")
     end
     saveXMLFile(xmlFile)
     delete(xmlFile)
 end
 
 -- Finds or creates a registry entry for a player.
--- Returns the entry (with fileId guaranteed to be set).
-function RoleplayPhone:getOrCreateRegistryEntry(uniqueId, phone)
-    local registry = self:loadPlayerRegistry()
+-- Returns the entry (with fileId and nickname guaranteed to be set).
+-- IMPORTANT: Uses cachedRegistry from memory instead of reading from disk.
+-- During Mission00.saveSavegame, getSaveDir() returns the tempsavegame path,
+-- so any disk read would fail (roleplayers.xml doesn't exist there yet).
+-- The in-memory cache is always authoritative — it was loaded at startup and
+-- kept in sync by every call to this function and on disconnect.
+function RoleplayPhone:getOrCreateRegistryEntry(uniqueId, phone, nickname)
+    -- Bootstrap from disk only if we have no cache yet (first call at startup)
+    if not RoleplayPhone.cachedRegistry then
+        RoleplayPhone.cachedRegistry = self:loadPlayerRegistry()
+    end
+    local registry = RoleplayPhone.cachedRegistry
 
     -- Look for existing entry by uniqueId
     for _, entry in ipairs(registry) do
         if entry.uniqueId == uniqueId then
-            -- Update phone if changed
-            if phone and phone ~= "" then entry.phone = phone end
-            self:savePlayerRegistry(registry)
+            local changed = false
+            if phone    and phone    ~= "" and entry.phone    ~= phone    then entry.phone    = phone;    changed = true end
+            if nickname and nickname ~= "" and entry.nickname ~= nickname then entry.nickname = nickname; changed = true end
+            if changed then self:savePlayerRegistry(registry) end
             return entry
         end
     end
 
-    -- New player — build their fileId
+    -- New player — build their fileId and add to in-memory registry
     local fileId = self:buildFileId(uniqueId, registry)
-    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "" }
+    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "", nickname = nickname or "" }
     table.insert(registry, entry)
+    -- cachedRegistry IS registry (same table reference), so it's already updated
     self:savePlayerRegistry(registry)
     return entry
 end

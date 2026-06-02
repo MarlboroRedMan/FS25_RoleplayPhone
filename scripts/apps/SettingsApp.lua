@@ -43,7 +43,7 @@ function RoleplayPhone:drawSettings()
 
     -- Active tab indicator
     local activeTabX = genActive and px or ringActive and px+tabW or px+tabW*2
-    self:drawRect(activeTabX, tabY, tabW, 0.003, 0.70, 0.50, 1.0, 1.0)
+    self:drawRect(activeTabX, tabY, tabW, 0.003, 0.20, 0.85, 0.35, 1.0)
 
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(genActive);  setTextColor(1,1,1, genActive  and 1.0 or 0.5)
@@ -77,12 +77,12 @@ function RoleplayPhone:drawSettings()
         self:drawButton("setting_timeformat_12",
             indent, cy - rowH, optW, rowH,
             g_i18n:getText("settings_12hr"), is12 and 0.28 or 0.12, is12 and 0.18 or 0.10, is12 and 0.45 or 0.22, 0.012)
-        if is12 then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0) end
+        if is12 then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
         self:drawButton("setting_timeformat_24",
             indent + optW + optGap, cy - rowH, optW, rowH,
             g_i18n:getText("settings_24hr"), not is12 and 0.28 or 0.12, not is12 and 0.18 or 0.10,
             not is12 and 0.45 or 0.22, 0.012)
-        if not is12 then self:drawRect(indent + optW + optGap, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0) end
+        if not is12 then self:drawRect(indent + optW + optGap, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
         cy = cy - rowH - 0.022
 
         -- Temperature
@@ -95,12 +95,12 @@ function RoleplayPhone:drawSettings()
         self:drawButton("setting_temp_F",
             indent, cy - rowH, optW, rowH,
             g_i18n:getText("settings_temp_f"), isF and 0.28 or 0.12, isF and 0.18 or 0.10, isF and 0.45 or 0.22, 0.013)
-        if isF then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0) end
+        if isF then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
         self:drawButton("setting_temp_C",
             indent + optW + optGap, cy - rowH, optW, rowH,
             g_i18n:getText("settings_temp_c"), not isF and 0.28 or 0.12, not isF and 0.18 or 0.10,
             not isF and 0.45 or 0.22, 0.013)
-        if not isF then self:drawRect(indent + optW + optGap, cy - rowH, 0.004, rowH, 0.70, 0.50, 1.0, 1.0) end
+        if not isF then self:drawRect(indent + optW + optGap, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
         cy = cy - rowH - 0.022
 
         -- Battery Widget
@@ -115,6 +115,33 @@ function RoleplayPhone:drawSettings()
             batOn and g_i18n:getText("settings_on") or g_i18n:getText("settings_off"),
             batOn and 0.08 or 0.22, batOn and 0.42 or 0.14, batOn and 0.18 or 0.14, 0.013)
         if batOn then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
+        cy = cy - rowH - 0.022
+
+        -- RP Voice Mode (host only) — stored in server_config.xml, takes effect on restart
+        if g_server ~= nil then
+            setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
+            setTextColor(0.55, 0.45, 0.75, 0.85)
+            renderText(indent, cy, 0.009, g_i18n:getText("settings_rp_voice_mode"))
+            cy = cy - 0.028
+
+            local vmConfig = self.rpVoiceModeConfig or false
+            self:drawButton("setting_voicemode_toggle",
+                indent, cy - rowH, optW, rowH,
+                vmConfig and g_i18n:getText("settings_on") or g_i18n:getText("settings_off"),
+                vmConfig and 0.08 or 0.22, vmConfig and 0.42 or 0.14, vmConfig and 0.18 or 0.14, 0.013)
+            if vmConfig then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
+
+            local isPending = (vmConfig ~= self.settings.rpVoiceMode)
+            setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
+            setTextColor(
+                isPending and 0.95 or 0.40,
+                isPending and 0.75 or 0.40,
+                isPending and 0.15 or 0.50,
+                0.90)
+            renderText(indent + optW + optGap, cy - rowH * 0.65, 0.008,
+                isPending and g_i18n:getText("settings_rp_voice_restart")
+                          or  g_i18n:getText("settings_rp_voice_hint"))
+        end
 
 
     -- ── RINGTONES TAB ─────────────────────────────────────────────────────────
@@ -124,9 +151,9 @@ function RoleplayPhone:drawSettings()
         local arrowH = 0.038
         local nameW  = pw - 0.030 - arrowW*2
 
-        -- Current ringtone name
-        local ri = self.settings.ringtoneIndex or 1
-        local rt = self.RINGTONES[ri] or self.RINGTONES[1]
+        -- Current ringtone name (previewRingtone may differ from applied)
+        local previewIdx = self.previewRingtone or self.settings.ringtoneIndex
+        local rt = self.RINGTONES[previewIdx] or self.RINGTONES[1]
 
         setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
         setTextColor(0.55, 0.45, 0.75, 0.85)
@@ -153,14 +180,26 @@ function RoleplayPhone:drawSettings()
         -- Index indicator
         setTextAlignment(RenderText.ALIGN_CENTER); setTextColor(0.55, 0.50, 0.70, 0.70)
         renderText(cx, cy, 0.009,
-            string.format(g_i18n:getText("settings_wallpaper_index_fmt"), ri, #self.RINGTONES))
+            string.format(g_i18n:getText("settings_wallpaper_index_fmt"), previewIdx, #self.RINGTONES))
         cy = cy - 0.030
 
-        -- Preview button
-        local previewW = pw * 0.55
+        -- Preview + Apply buttons
+        local btnW = (pw - 0.024 - 0.006) / 2
         self:drawButton("ringtone_preview",
-            cx - previewW/2, cy - arrowH, previewW, arrowH,
+            indent, cy - arrowH, btnW, arrowH,
             g_i18n:getText("settings_ringtone_preview"), 0.18, 0.12, 0.35, 0.012)
+
+        local isApplied = previewIdx == self.settings.ringtoneIndex
+        if isApplied then
+            setTextAlignment(RenderText.ALIGN_CENTER); setTextBold(false)
+            setTextColor(0.20, 0.85, 0.35, 0.90)
+            renderText(indent + btnW + 0.006 + btnW / 2, cy - arrowH * 0.35, 0.010,
+                g_i18n:getText("settings_applied"))
+        else
+            self:drawButton("ringtone_apply",
+                indent + btnW + 0.006, cy - arrowH, btnW, arrowH,
+                g_i18n:getText("settings_apply"), 0.10, 0.38, 0.18, 0.012)
+        end
 
     -- ── WALLPAPER TAB ─────────────────────────────────────────────────────────
     elseif self.settingsTab == "wallpaper" then
@@ -226,7 +265,7 @@ end
 -- ─── Settings save / load ─────────────────────────────────────────────────────
 function RoleplayPhone:saveSettings()
     local xmlPath = getUserProfileAppPath()
-        .. "modSettings/FS25_RoleplayInvoices_settings.xml"
+        .. "modSettings/FS25_RoleplayPhone_settings.xml"
     local xmlFile = createXMLFile("RP_Settings", xmlPath, "phoneSettings")
     if not xmlFile or xmlFile == 0 then return end
 
@@ -242,8 +281,11 @@ function RoleplayPhone:saveSettings()
 end
 
 function RoleplayPhone:loadSettings()
-    local xmlPath = getUserProfileAppPath()
-        .. "modSettings/FS25_RoleplayInvoices_settings.xml"
+    local newPath = getUserProfileAppPath() .. "modSettings/FS25_RoleplayPhone_settings.xml"
+    local oldPath = getUserProfileAppPath() .. "modSettings/FS25_RoleplayInvoices_settings.xml"
+
+    -- Try new path first; fall back to old name for one-time migration
+    local xmlPath = fileExists(newPath) and newPath or oldPath
     local xmlFile = loadXMLFile("RP_Settings", xmlPath)
     if not xmlFile or xmlFile == 0 then
         print("[RoleplayPhone] No settings file found, using defaults")

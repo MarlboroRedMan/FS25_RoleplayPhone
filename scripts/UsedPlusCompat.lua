@@ -1,6 +1,6 @@
 --[[
     UsedPlusCompat.lua - UsedPlus Credit Bureau Integration
-    FS25_RoleplayInvoices v0.2.0
+    FS25_RoleplayPhone
 
     When UsedPlus is installed, registers invoices as external deals with the
     UsedPlus credit bureau.  This means:
@@ -14,8 +14,10 @@
 
 UsedPlusCompat = {}
 
--- Identifier passed to UsedPlus so it can group our deals together
-UsedPlusCompat.MOD_NAME = "FS25_RoleplayInvoices"
+-- Identifier passed to UsedPlus so it can group our deals together.
+-- NOTE: intentionally kept as "FS25_RoleplayPhone" — changing this after a
+-- server has live deals would orphan those records in UsedPlus's saved data.
+UsedPlusCompat.MOD_NAME = "FS25_RoleplayPhone"
 
 -- invoiceId (number) -> externalDealId (string)
 -- Persisted via InvoiceSave so the mapping survives a game reload.
@@ -60,15 +62,7 @@ end
 -- ─── Called when an invoice is paid (by recipient) ───────────────────────────
 -- Records an on-time payment, boosting the payer's credit score.
 function UsedPlusCompat:onInvoicePaid(invoice)
-    if not self:isAvailable() then return end
-
-    local externalDealId = self.dealMap[invoice.id]
-    if not externalDealId then return end
-
-    UsedPlusAPI.reportExternalPayment(externalDealId, invoice.amount)
-    self.dealMap[invoice.id] = nil
-    print(string.format("[UsedPlusCompat] Payment recorded for deal %s ($%d)",
-        externalDealId, invoice.amount))
+    self:_recordPayment(invoice, "Payment")
 end
 
 
@@ -90,6 +84,12 @@ end
 -- ─── Called when sender manually marks an invoice as paid ────────────────────
 -- Treat as an on-time payment from the credit bureau's perspective.
 function UsedPlusCompat:onInvoiceMarkedPaid(invoice)
+    self:_recordPayment(invoice, "Manual paid")
+end
+
+
+-- Shared payment recording logic used by onInvoicePaid and onInvoiceMarkedPaid.
+function UsedPlusCompat:_recordPayment(invoice, label)
     if not self:isAvailable() then return end
 
     local externalDealId = self.dealMap[invoice.id]
@@ -97,8 +97,8 @@ function UsedPlusCompat:onInvoiceMarkedPaid(invoice)
 
     UsedPlusAPI.reportExternalPayment(externalDealId, invoice.amount)
     self.dealMap[invoice.id] = nil
-    print(string.format("[UsedPlusCompat] Manual paid recorded for deal %s ($%d)",
-        externalDealId, invoice.amount))
+    print(string.format("[UsedPlusCompat] %s recorded for deal %s ($%d)",
+        label, externalDealId, invoice.amount))
 end
 
 
@@ -130,5 +130,6 @@ function UsedPlusCompat:loadFromXML(xmlFile, key)
     end
 end
 
-print("[UsedPlusCompat] Loaded – UsedPlus integration " ..
-    (UsedPlusAPI ~= nil and "ACTIVE" or "inactive (UsedPlus not detected)"))
+-- Note: UsedPlusAPI availability is checked at call time via isAvailable().
+-- A load-time check here would always show "inactive" since other mods
+-- haven't initialized yet when this script is loaded.

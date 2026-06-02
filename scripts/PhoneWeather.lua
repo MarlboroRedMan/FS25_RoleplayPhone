@@ -77,7 +77,6 @@ function RoleplayPhone:getForecastFromXML()
     if self._forecastCacheDay ~= currentDay then
         self._forecastCache = nil; self._forecastCacheDay = currentDay
     end
-    if self._forecastCache then return self._forecastCache end
     local dir = g_currentMission and g_currentMission.missionInfo and g_currentMission.missionInfo.savegameDirectory
     if not dir then return {} end
     local xmlFile = loadXMLFile("RP_WeatherXML", dir .. "/environment.xml")

@@ -7,14 +7,15 @@
         Built for serious RP communities that want a real in-game economy.
     </description>
 
-    <version>0.4.0</version>
+    <version>0.4.2</version>
     <author>MRM &amp; Claude (Anthropic)</author>
     <iconFilename>textures/icon.dds</iconFilename>
 	<multiplayer supported="true"/>
 
     <actions>
         <action name="RI_OPEN_PHONE"   category="ONFOOT VEHICLE" axisType="BUTTON"/>
-        <action name="RI_CALL_ACTION"  category="ONFOOT VEHICLE" axisType="BUTTON"/>
+        <action name="RI_CALL_ACTION"   category="ONFOOT VEHICLE" axisType="BUTTON"/>
+        <action name="RI_DECLINE_ACTION" category="ONFOOT VEHICLE" axisType="BUTTON"/>
     </actions>
 
     <inputBinding>
@@ -22,7 +23,10 @@
             <binding device="KB_MOUSE_DEFAULT" input="KEY_f7"/>
         </actionBinding>
         <actionBinding action="RI_CALL_ACTION">
-            <binding device="KB_MOUSE_DEFAULT" input="KEY_f8"/>
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f10"/>
+        </actionBinding>
+        <actionBinding action="RI_DECLINE_ACTION">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_f9"/>
         </actionBinding>
     </inputBinding>
 
@@ -31,21 +35,33 @@
         <sourceFile filename="scripts/Invoice.lua"/>
         <sourceFile filename="scripts/InvoiceManager.lua"/>
         <sourceFile filename="scripts/InvoiceSave.lua"/>
+        <sourceFile filename="scripts/PlayerEvents.lua"/>
+        <sourceFile filename="scripts/CallEvents.lua"/>
+        <sourceFile filename="scripts/ContactEvents.lua"/>
+        <sourceFile filename="scripts/MessageEvents.lua"/>
+        <sourceFile filename="scripts/WeatherEvents.lua"/>
         <sourceFile filename="scripts/InvoiceEvents.lua"/>
         <sourceFile filename="scripts/ContactManager.lua"/>
         <sourceFile filename="scripts/NotificationManager.lua"/>
         <sourceFile filename="scripts/UsedPlusCompat.lua"/>
         <!-- Phone core: defines RoleplayPhone table, state, init, lifecycle, Mission00 hooks -->
         <sourceFile filename="scripts/RoleplayPhone.lua"/>
+        <sourceFile filename="scripts/MessageManager.lua"/>
         <!-- Phone extensions: add methods to RoleplayPhone (load after core) -->
+        <sourceFile filename="scripts/PhoneSave.lua"/>
         <sourceFile filename="scripts/PhoneHelpers.lua"/>
         <sourceFile filename="scripts/PhoneUI.lua"/>
         <sourceFile filename="scripts/PhoneWeather.lua"/>
         <sourceFile filename="scripts/PhoneCallLogic.lua"/>
+        <sourceFile filename="scripts/PhoneVoice.lua"/>
         <sourceFile filename="scripts/PhoneInput.lua"/>
         <!-- Public API for other mods -->
         <sourceFile filename="scripts/RoleplayPhoneAPI.lua"/>
         <!-- Apps: each adds draw methods to RoleplayPhone -->
+        <sourceFile filename="scripts/apps/CallsInput.lua"/>
+        <sourceFile filename="scripts/apps/ContactsInput.lua"/>
+        <sourceFile filename="scripts/apps/MessagesInput.lua"/>
+        <sourceFile filename="scripts/apps/InvoicesInput.lua"/>
         <sourceFile filename="scripts/apps/HomeApp.lua"/>
         <sourceFile filename="scripts/apps/WeatherApp.lua"/>
         <sourceFile filename="scripts/apps/InvoicesApp.lua"/>
@@ -53,6 +69,10 @@
         <sourceFile filename="scripts/apps/ContactsApp.lua"/>
         <sourceFile filename="scripts/apps/MessagesApp.lua"/>
         <sourceFile filename="scripts/apps/SettingsApp.lua"/>
+        <!-- Vehicle specialization: enables F8 call answer/end while driving -->
+        <sourceFile filename="scripts/RoleplayPhoneVehicleSpec.lua"/>
+        <!-- Bootstrap: lifecycle hooks — must load LAST so all methods are defined -->
+        <sourceFile filename="scripts/Bootstrap.lua"/>
     </extraSourceFiles>
 
     <l10n filenamePrefix="localization/l10n">
@@ -61,6 +81,9 @@
         </text>
         <text name="input_RI_CALL_ACTION">
             <en>Answer / Hang Up Call</en>
+        </text>
+        <text name="input_RI_DECLINE_ACTION">
+            <en>Decline Call</en>
         </text>
     </l10n>
 </modDesc>
