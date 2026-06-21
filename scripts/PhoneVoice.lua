@@ -19,9 +19,6 @@ end
 
 -- ─── SPEAKER DISPLAY OVERRIDE ─────────────────────────────────────────────────
 -- Suppress the FS25 speaking indicator when rpVoiceMode is active.
--- In RP mode the mic is muted unless in an active call, so the indicator
--- showing would be misleading. Guard with existence check — logs a warning
--- if the class isn't found so we know immediately if the name changed.
 if SpeakerDisplay and SpeakerDisplay.draw then
     SpeakerDisplay.draw = Utils.overwrittenFunction(SpeakerDisplay.draw,
         function(self, superFunc, ...)
@@ -45,58 +42,144 @@ function RoleplayPhone:stopRingtone()
 end
 
 -- ─── CALL ISOLATION ───────────────────────────────────────────────────────────
--- activeCalls is a list of {userIdA, userIdB} pairs maintained by all peers.
--- On any change, rebuildVoiceIsolation() recomputes volumes for every user.
+-- activeCalls is a list of groups: { {uid1, uid2, ...}, {uid3, uid4}, ... }
+-- Each group is a variable-length array of session userIds currently in the same call.
+-- A 1:1 call is simply a group with 2 members.
+--
 -- Uses voiceChatSetUserVolume with the correct voice UUID (user:getUniqueUserId()),
 -- not the volatile integer userId. This was the root cause of all previous failures.
 
 function RoleplayPhone:rebuildVoiceIsolation()
     if not self:isVoiceAvailable() then return end
     local myId = self:getMyUserId()
-    local pairStr = ""
-    for i, pair in ipairs(self.activeCalls) do
-        pairStr = pairStr .. string.format("{%d,%d}", pair[1], pair[2])
-        if i < #self.activeCalls then pairStr = pairStr .. "," end
+
+    -- Log current group state
+    local groupStr = ""
+    for i, group in ipairs(self.activeCalls) do
+        groupStr = groupStr .. "{"
+        for j, uid in ipairs(group) do
+            groupStr = groupStr .. uid
+            if j < #group then groupStr = groupStr .. "," end
+        end
+        groupStr = groupStr .. "}"
+        if i < #self.activeCalls then groupStr = groupStr .. "," end
     end
-    print(string.format("[PhoneVoice] rebuildVoiceIsolation: myId=%d activeCalls=[%s]", myId, pairStr))
+    print(string.format("[PhoneVoice] rebuildVoiceIsolation: myId=%d activeCalls=[%s]", myId, groupStr))
+
     self:_applyProximityVolumes()
+
+    -- Keep self.call.members in sync with current group membership (for UI display).
+    -- This is the single source of truth — derived from activeCalls after each rebuild.
+    if self.state == self.STATE.CALL_ACTIVE then
+        self.call.members = {}
+        for _, group in ipairs(self.activeCalls) do
+            for _, uid in ipairs(group) do
+                if uid == myId then
+                    -- Copy the group (don't hold a reference to the activeCalls table)
+                    for _, gid in ipairs(group) do
+                        table.insert(self.call.members, gid)
+                    end
+                    break
+                end
+            end
+            if #self.call.members > 0 then break end
+        end
+    end
 end
 
+-- addActiveCall: smart merge.
+-- If A or B is already in a group, the other is added to that group.
+-- If both are in groups, A's group absorbs B's group (merge).
+-- If neither is in a group, a new {A, B} group is created.
+-- Idempotent: adding an already-present member is a no-op.
 function RoleplayPhone:addActiveCall(userIdA, userIdB)
-    -- Idempotent: check pair doesn't already exist before adding
-    for _, pair in ipairs(self.activeCalls) do
-        if (pair[1] == userIdA and pair[2] == userIdB)
-        or (pair[1] == userIdB and pair[2] == userIdA) then
-            print(string.format("[PhoneVoice] addActiveCall: {%d,%d} already exists, skipping", userIdA, userIdB))
+    -- Find which group (if any) each userId belongs to
+    local groupA, idxA = nil, nil
+    local groupB, idxB = nil, nil
+    for i, group in ipairs(self.activeCalls) do
+        for _, uid in ipairs(group) do
+            if uid == userIdA then groupA = group; idxA = i end
+            if uid == userIdB then groupB = group; idxB = i end
+        end
+    end
+
+    if groupA and groupB then
+        if idxA == idxB then
+            -- Both already in the same group — idempotent, nothing to do
+            print(string.format("[PhoneVoice] addActiveCall: {%d,%d} already in same group, skipping", userIdA, userIdB))
             return
         end
+        -- Merge groupB into groupA, then remove groupB
+        for _, uid in ipairs(groupB) do
+            table.insert(groupA, uid)
+        end
+        table.remove(self.activeCalls, idxB)
+        print(string.format("[PhoneVoice] addActiveCall: merged groups for %d and %d, group size=%d", userIdA, userIdB, #groupA))
+
+    elseif groupA then
+        -- A is in a group, add B to it
+        table.insert(groupA, userIdB)
+        print(string.format("[PhoneVoice] addActiveCall: added %d to existing group (size=%d)", userIdB, #groupA))
+
+    elseif groupB then
+        -- B is in a group, add A to it
+        table.insert(groupB, userIdA)
+        print(string.format("[PhoneVoice] addActiveCall: added %d to existing group (size=%d)", userIdA, #groupB))
+
+    else
+        -- Neither in a group — create new 2-person group
+        table.insert(self.activeCalls, { userIdA, userIdB })
+        print(string.format("[PhoneVoice] addActiveCall: new group {%d,%d}", userIdA, userIdB))
     end
-    table.insert(self.activeCalls, { userIdA, userIdB })
-    print(string.format("[PhoneVoice] addActiveCall: added {%d,%d}, total pairs=%d", userIdA, userIdB, #self.activeCalls))
+
     self:rebuildVoiceIsolation()
 end
 
-function RoleplayPhone:removeActiveCall(userIdA, userIdB)
-    for i, pair in ipairs(self.activeCalls) do
-        if (pair[1] == userIdA and pair[2] == userIdB)
-        or (pair[1] == userIdB and pair[2] == userIdA) then
-            table.remove(self.activeCalls, i)
-            print(string.format("[PhoneVoice] removeActiveCall: removed {%d,%d}, total pairs=%d", userIdA, userIdB, #self.activeCalls))
-            break
+-- removeActiveCall: remove a single member from their group.
+-- Returns the remaining group members as a list (may be empty if group dissolved),
+-- or nil if the userId was not found in any group.
+-- The caller can use the return value to decide whether to notify remaining members.
+function RoleplayPhone:removeActiveCall(userId)
+    for i, group in ipairs(self.activeCalls) do
+        for j, uid in ipairs(group) do
+            if uid == userId then
+                table.remove(group, j)
+
+                -- Copy remaining members before potentially dissolving the group
+                local remaining = {}
+                for _, remaining_uid in ipairs(group) do
+                    table.insert(remaining, remaining_uid)
+                end
+
+                if #group <= 1 then
+                    -- Group dissolves (0 or 1 member left — 1-person call is not a call)
+                    table.remove(self.activeCalls, i)
+                    print(string.format("[PhoneVoice] removeActiveCall: %d left, group dissolved (remaining=%d)",
+                        userId, #remaining))
+                else
+                    print(string.format("[PhoneVoice] removeActiveCall: %d left, group continues (remaining=%d)",
+                        userId, #remaining))
+                end
+
+                self:rebuildVoiceIsolation()
+                return remaining
+            end
         end
     end
-    self:rebuildVoiceIsolation()
+    -- Not found in any group
+    print(string.format("[PhoneVoice] removeActiveCall: %d not found in any group", userId))
+    return nil
 end
 
 -- ─── PROXIMITY VOLUME APPLICATION ─────────────────────────────────────────────
 -- Core function: called by rebuildVoiceIsolation (immediate, on call events)
 -- and updateProximityVoice (polled every PROX_POLL_MS ms).
 --
--- Rules applied per user:
---   call partner        → vol 1.0 always (regardless of distance)
---   in a different call → vol 0.0 (isolation between concurrent calls)
---   bystander (calls active) → vol based on their distance to nearest call participant
---   no active calls anywhere → vol based on plain bilateral proximity (me <-> them)
+-- Rules applied per user (from MY perspective):
+--   in my group           → vol 1.0 always (call partners, regardless of distance)
+--   in a different group  → vol 0.0 (call isolation between concurrent calls)
+--   bystander, I'm in call→ vol based on THEIR distance to nearest call participant
+--   no calls / I'm bystander → vol based on plain bilateral proximity (me ↔ them)
 --
 -- Position data: g_currentMission.players includes remote players on every client.
 -- Confirmed via Dog.lua in decompiled engine source (getWorldTranslation on remote rootNode).
@@ -117,7 +200,6 @@ function RoleplayPhone:_applyProximityVolumes()
     local myId = self:getMyUserId()
 
     -- Build position map: userId -> {x,y,z}
-    -- g_currentMission.players contains all players (local + remote); rootNode is valid client-side.
     local positions = {}
     if g_currentMission and g_currentMission.players then
         for _, player in pairs(g_currentMission.players) do
@@ -129,15 +211,24 @@ function RoleplayPhone:_applyProximityVolumes()
     end
     local myPos = positions[myId]
 
-    -- Build call participation sets
-    local myPartner       = nil  -- session userId of my call partner, nil if not in a call
-    local callParticipants = {}  -- userId -> true for anyone in any active call
-    for _, pair in ipairs(self.activeCalls) do
-        local A, B = pair[1], pair[2]
-        callParticipants[A] = true
-        callParticipants[B] = true
-        if     A == myId then myPartner = B
-        elseif B == myId then myPartner = A end
+    -- Build group membership sets from activeCalls
+    local myGroup         = {}  -- userId -> true for members of MY group (excluding me)
+    local callParticipants = {} -- userId -> true for anyone in ANY active call
+    local inACall         = false
+
+    for _, group in ipairs(self.activeCalls) do
+        local groupHasMe = false
+        for _, uid in ipairs(group) do
+            if uid == myId then groupHasMe = true; break end
+        end
+
+        for _, uid in ipairs(group) do
+            callParticipants[uid] = true
+            if groupHasMe and uid ~= myId then
+                myGroup[uid] = true
+                inACall = true
+            end
+        end
     end
 
     local users = g_currentMission.userManager:getUsers()
@@ -146,26 +237,26 @@ function RoleplayPhone:_applyProximityVolumes()
         if uid ~= myId then
             local vol
 
-            if uid == myPartner then
-                -- Call partner: always full volume, distance irrelevant
+            if myGroup[uid] then
+                -- My call group member: always full volume, distance irrelevant
                 vol = 1.0
 
-            elseif callParticipants[uid] then
-                -- In a different concurrent call: full isolation
+            elseif inACall and callParticipants[uid] then
+                -- In a DIFFERENT concurrent call (and I'm also in a call): full isolation
                 vol = 0.0
 
             else
-                -- Bystander (or nobody is in a call anywhere)
+                -- Perspective-aware fallthrough
                 local theirPos = positions[uid]
                 if not theirPos or not myPos then
                     vol = 1.0  -- position unknown -> fail open
-                elseif #self.activeCalls > 0 then
-                    -- There are active calls. Bystander volume = their distance to the
-                    -- nearest call participant. Simulates voice bleeding into a call
-                    -- if the bystander is physically near someone on the phone.
+                elseif inACall and not callParticipants[uid] then
+                    -- I'm in a call, they're a bystander → their proximity to nearest call participant.
+                    -- Simulates mic ambient pickup: bystander bleeds in based on how close they
+                    -- are to any call participant, not how close they are to the listener.
                     local minDist = math.huge
-                    for _, pair in ipairs(self.activeCalls) do
-                        for _, pid in ipairs({ pair[1], pair[2] }) do
+                    for _, group in ipairs(self.activeCalls) do
+                        for _, pid in ipairs(group) do
                             local pPos = positions[pid]
                             if pPos then
                                 local d = _dist3(theirPos, pPos)
@@ -175,7 +266,7 @@ function RoleplayPhone:_applyProximityVolumes()
                     end
                     vol = (minDist < math.huge) and self:_distanceToVolume(minDist) or 1.0
                 else
-                    -- No active calls: plain proximity between me and them
+                    -- I'm a bystander (they may be in a call, or nobody is in a call) → bilateral proximity
                     vol = self:_distanceToVolume(_dist3(myPos, theirPos))
                 end
             end
@@ -187,7 +278,6 @@ function RoleplayPhone:_applyProximityVolumes()
 end
 
 -- Polled from Mission00.update every PROX_POLL_MS milliseconds.
--- Handles continuous volume updates as players move around.
 function RoleplayPhone:updateProximityVoice(dt)
     if not self.settings or not self.settings.rpVoiceMode then return end
     self.proximityTimer = (self.proximityTimer or 0) + dt
@@ -203,15 +293,10 @@ function RoleplayPhone:applyVoiceMode()
         print("[PhoneVoice] Voice unavailable — skipping applyVoiceMode")
         return
     end
-    -- If rpVoiceMode is off the mod does not manage voice at all.
-    -- FS25 uses whatever the player has set (PTT, voice activity, etc.).
     if not self.settings.rpVoiceMode then
         print("[PhoneVoice] rpVoiceMode off — voice not managed by mod")
         return
     end
-    -- rpVoiceMode on: mic is always hot. Voice isolation is handled entirely
-    -- through per-user volume in _applyProximityVolumes — no recording mode
-    -- changes during calls. This call is only for load and settings toggle.
     local ok, err = pcall(voiceChatSetRecordingMode, VoiceChatRecordingMode.ALWAYS)
     if not ok then
         print("[PhoneVoice] setRecordingMode ALWAYS failed: " .. tostring(err))
@@ -228,5 +313,3 @@ function RoleplayPhone:broadcastServerConfig()
     g_server:broadcastEvent(evt)
     print("[PhoneVoice] Broadcast ServerConfig: rpVoiceMode=" .. tostring(self.settings.rpVoiceMode))
 end
-
-

@@ -3,7 +3,7 @@
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- EVENT: Call — ring / answer / decline / end between two players
--- callType: "ring" | "answer" | "decline" | "end"
+-- callType: "ring" | "answer" | "decline" | "end" | "busy" | "missed"
 -- ─────────────────────────────────────────────────────────────────────────────
 
 if RI_CallEvent == nil then
@@ -44,10 +44,11 @@ function RI_CallEvent:readStream(streamId, connection)
 end
 
 function RI_CallEvent:run(connection)
-    -- Server forwards to all other clients
+    -- ── SERVER-SIDE HANDLING ─────────────────────────────────────────────────
+    -- Fires when a CLIENT sends an event to the server (connection from client).
     if connection ~= nil and not connection:getIsServer() then
 
-        -- Store missed call in the client's playerCalls on the host (do NOT broadcast)
+        -- "missed" is stored on the host only, never forwarded
         if self.callType == "missed" then
             local clientInfo     = RoleplayPhone.onlineUsers[self.fromUserId]
             local clientUniqueId = clientInfo and clientInfo.uniqueId or ""
@@ -70,25 +71,61 @@ function RI_CallEvent:run(connection)
             return
         end
 
-        -- Voice isolation: server owns the active call table and broadcasts to bystanders.
-        -- Participants (answerCall / onCallAnswered) update their own local state directly.
         if self.callType == "answer" then
+            -- Add to the call group (smart merge: if either party is already in a group,
+            -- the other joins it; otherwise a new 2-person group is created).
             RoleplayPhone:addActiveCall(self.fromUserId, self.toUserId)
-            g_server:broadcastEvent(RI_VoiceCallEvent.new(self.fromUserId, self.toUserId, true))
-        elseif self.callType == "end" or self.callType == "decline" or self.callType == "busy" then
-            RoleplayPhone:removeActiveCall(self.fromUserId, self.toUserId)
-            g_server:broadcastEvent(RI_VoiceCallEvent.new(self.fromUserId, self.toUserId, false))
+            -- Broadcast the full activeCalls snapshot — all clients (including bystanders)
+            -- replace their local state and recompute voice isolation.
+            g_server:broadcastEvent(RI_VoiceCallEvent.new(RoleplayPhone.activeCalls))
+            -- If the host placed this call and a client just answered, update host UI state.
+            -- The host never runs the client-side handler, so onCallAnswered() won't fire
+            -- otherwise — leaving the host stuck on CALL_OUTGOING/"Ringing" indefinitely.
+            if self.toUserId == RoleplayPhone:getMyUserId() then
+                RoleplayPhone:onCallAnswered()
+            end
+
+        elseif self.callType == "end" then
+            -- Remove the leaver from their group.
+            local remaining = RoleplayPhone:removeActiveCall(self.fromUserId)
+            -- Always broadcast updated snapshot first — all clients stay in sync.
+            g_server:broadcastEvent(RI_VoiceCallEvent.new(RoleplayPhone.activeCalls))
+
+            -- If exactly 1 member remains, the group dissolved — notify them.
+            if remaining and #remaining == 1 then
+                local lastId = remaining[1]
+                local myHostId = RoleplayPhone:getMyUserId()
+                if lastId == myHostId then
+                    -- Host is the last remaining member — handle locally
+                    RoleplayPhone:onCallEnded()
+                else
+                    -- A client is the last remaining member — send "end" to them
+                    g_server:broadcastEvent(RI_CallEvent.new("end", self.fromUserId, lastId, "", ""))
+                end
+                print(string.format("[CallEvents] Group dissolved: last member=%d notified", lastId))
+            elseif remaining and #remaining >= 2 then
+                -- Group continues with remaining members — VoiceCallEvent already sent, nothing else needed.
+                print(string.format("[CallEvents] %d left group, %d members remain", self.fromUserId, #remaining))
+            end
+            -- "end" is NOT forwarded blindly — the server handles group dissolution above.
+            -- Forward and return here so the general forward below doesn't also send it.
+            return
+
+        elseif self.callType == "decline" or self.callType == "busy" then
+            -- Pre-call events: no group context yet. No removeActiveCall needed.
+            -- Fall through to the general broadcast below to forward to toUserId.
         end
 
+        -- Forward to all other clients (ring, answer, decline, busy)
         g_server:broadcastEvent(
             RI_CallEvent.new(self.callType, self.fromUserId, self.toUserId,
                              self.callerName, self.callerNum),
             false, connection)
-
-        -- Outgoing call is recorded via addCallHistoryEntry mirror in onIncomingCall —
-        -- no separate storage needed here.
+        return
     end
 
+    -- ── CLIENT-SIDE HANDLING ─────────────────────────────────────────────────
+    -- Fires on the local machine when an event is received from the server.
     local myUserId = RoleplayPhone:getMyUserId()
     if self.toUserId ~= myUserId then return end
 
@@ -158,9 +195,11 @@ function RI_CallHistorySyncEvent:run(connection)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- EVENT: VoiceCall — host broadcasts active call pair to all clients
--- Each client applies voiceChatSetUserPairBlocked locally for isolation.
--- blocked: true when call starts, false when call ends
+-- EVENT: VoiceCall — host broadcasts the full activeCalls snapshot to all clients.
+-- Each client replaces its local activeCalls entirely and rebuilds voice isolation.
+--
+-- Wire format: [ numGroups | [numMembers | userId...] ... ]
+-- This replaces the old pair+blocked format, enabling group calls of any size.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 if RI_VoiceCallEvent == nil then
@@ -173,37 +212,49 @@ function RI_VoiceCallEvent.emptyNew()
     return Event.new(RI_VoiceCallEvent_mt)
 end
 
-function RI_VoiceCallEvent.new(userIdA, userIdB, blocked)
+-- Pass the full activeCalls table (array of groups, each group an array of userIds).
+function RI_VoiceCallEvent.new(activeCalls)
     local self = RI_VoiceCallEvent.emptyNew()
-    self.userIdA  = userIdA
-    self.userIdB  = userIdB
-    self.blocked  = blocked
+    -- Deep copy so we don't hold a stale reference
+    self.groups = {}
+    for _, group in ipairs(activeCalls or {}) do
+        local g = {}
+        for _, uid in ipairs(group) do table.insert(g, uid) end
+        table.insert(self.groups, g)
+    end
     return self
 end
 
 function RI_VoiceCallEvent:writeStream(streamId, connection)
-    streamWriteInt32(streamId, self.userIdA)
-    streamWriteInt32(streamId, self.userIdB)
-    streamWriteBool(streamId,  self.blocked)
+    streamWriteInt32(streamId, #self.groups)
+    for _, group in ipairs(self.groups) do
+        streamWriteInt32(streamId, #group)
+        for _, uid in ipairs(group) do
+            streamWriteInt32(streamId, uid)
+        end
+    end
 end
 
 function RI_VoiceCallEvent:readStream(streamId, connection)
-    self.userIdA = streamReadInt32(streamId)
-    self.userIdB = streamReadInt32(streamId)
-    self.blocked = streamReadBool(streamId)
+    local numGroups = streamReadInt32(streamId)
+    self.groups = {}
+    for i = 1, numGroups do
+        local numMembers = streamReadInt32(streamId)
+        local group = {}
+        for j = 1, numMembers do
+            table.insert(group, streamReadInt32(streamId))
+        end
+        table.insert(self.groups, group)
+    end
     self:run(connection)
 end
 
 function RI_VoiceCallEvent:run(connection)
-    -- Server sends this; clients apply isolation locally.
+    -- Server sends this; clients replace their local activeCalls entirely.
     if g_server ~= nil then return end
-    print(string.format("[CallEvents] VoiceCallEvent received: {%d,%d} blocked=%s",
-        self.userIdA, self.userIdB, tostring(self.blocked)))
-    if self.blocked then
-        RoleplayPhone:addActiveCall(self.userIdA, self.userIdB)
-    else
-        RoleplayPhone:removeActiveCall(self.userIdA, self.userIdB)
-    end
+    RoleplayPhone.activeCalls = self.groups
+    print(string.format("[CallEvents] VoiceCallEvent: replaced activeCalls (%d group(s))", #self.groups))
+    RoleplayPhone:rebuildVoiceIsolation()
 end
 
 
@@ -241,7 +292,6 @@ function RI_ClearRecentsEvent:run(connection)
     local info     = RoleplayPhone.onlineUsers[self.playerUserId]
     local uniqueId = info and info.uniqueId or ""
     if uniqueId == "" then return end
-    -- Clear the server-side call history for this player and save immediately
     RoleplayPhone.playerCalls[uniqueId] = {}
     local entry    = RoleplayPhone:getOrCreateRegistryEntry(uniqueId, info.phone or "", info.name or "")
     local filename = RoleplayPhone:buildPlayerFilename(info.name or "unknown", entry.fileId)

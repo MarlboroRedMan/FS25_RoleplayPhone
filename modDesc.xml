@@ -40,6 +40,7 @@
         <sourceFile filename="scripts/ContactEvents.lua"/>
         <sourceFile filename="scripts/MessageEvents.lua"/>
         <sourceFile filename="scripts/WeatherEvents.lua"/>
+        <sourceFile filename="scripts/CarrierBotEvents.lua"/>
         <sourceFile filename="scripts/InvoiceEvents.lua"/>
         <sourceFile filename="scripts/ContactManager.lua"/>
         <sourceFile filename="scripts/NotificationManager.lua"/>
@@ -50,6 +51,7 @@
         <!-- Phone extensions: add methods to RoleplayPhone (load after core) -->
         <sourceFile filename="scripts/PhoneSave.lua"/>
         <sourceFile filename="scripts/PhoneHelpers.lua"/>
+        <sourceFile filename="scripts/CarrierBot.lua"/>
         <sourceFile filename="scripts/PhoneUI.lua"/>
         <sourceFile filename="scripts/PhoneWeather.lua"/>
         <sourceFile filename="scripts/PhoneCallLogic.lua"/>
@@ -80,7 +82,7 @@
             <en>Open Roleplay Phone</en>
         </text>
         <text name="input_RI_CALL_ACTION">
-            <en>Answer / Hang Up Call</en>
+            <en>Answer Call</en>
         </text>
         <text name="input_RI_DECLINE_ACTION">
             <en>Decline Call</en>

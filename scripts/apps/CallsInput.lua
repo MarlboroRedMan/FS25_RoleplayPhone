@@ -137,8 +137,8 @@ function RoleplayPhone:handleCallsInput(hb)
     end
 
     -- Answer / end active call
-    if hb.id == "btn_answer"   then self:answerCall(); return true end
-    if hb.id == "btn_end_call" then self:endCall();    return true end
+    if hb.id == "btn_answer"   then print("[RoleplayPhone] btn_answer clicked"); self:answerCall(); return true end
+    if hb.id == "btn_end_call" then print("[RoleplayPhone] btn_end_call clicked"); self:endCall();    return true end
 
     -- Generic Call button — from contact detail or message thread → startCall,
     -- from anywhere else → open Calls app on keypad tab.

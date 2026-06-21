@@ -61,6 +61,7 @@ RoleplayPhone.declineActionEventId         = nil
 RoleplayPhone.incomingCallActionEventId    = nil
 RoleplayPhone.incomingDeclineActionEventId = nil
 RoleplayPhone.activeCalls                  = {}
+RoleplayPhone.pendingIncoming              = nil   -- {fromUserId, contactName, contactNum, ringTimer} during call waiting
 RoleplayPhone.seenInvoiceIds            = {}
 RoleplayPhone.callHistory               = {}
 RoleplayPhone.callsTab                  = "keypad"
@@ -158,9 +159,18 @@ RoleplayPhone.call = {
     startTime   = 0,
     ringSample  = nil,
     prevState   = 7,
+    wasOpen     = false,
+    members     = {},   -- all userIds currently in the call group (populated from activeCalls)
 }
 
 -- ─── Contact create form state ────────────────────────────────────────────────
+-- ─── Carrier Bot settings form state (Settings > Server tab, host only) ─────────
+RoleplayPhone.carrierForm = {
+    name        = nil,
+    welcome     = nil,
+    activeField = nil,
+}
+
 RoleplayPhone.contactForm = {
     name        = "",
     phone       = "",
@@ -482,15 +492,24 @@ function RoleplayPhone:registerKeybind()
 end
 
 function RoleplayPhone:callAction()
+    print("[RoleplayPhone] callAction pressed (F10) state=" .. tostring(self.state))
     if self.state == self.STATE.CALL_INCOMING then
         self:answerCall()
+    elseif self.state == self.STATE.CALL_ACTIVE and self.pendingIncoming ~= nil then
+        -- Call waiting: F10 answers the queued incoming call and merges into current group
+        self:answerWaiting()
     end
 end
 
 function RoleplayPhone:declineAction()
-    if self.state == self.STATE.CALL_INCOMING
-    or self.state == self.STATE.CALL_OUTGOING
-    or self.state == self.STATE.CALL_ACTIVE then
+    print("[RoleplayPhone] declineAction pressed (F9) state=" .. tostring(self.state))
+    if self.pendingIncoming ~= nil then
+        -- Call waiting: F9 declines the queued call first; current call is unaffected.
+        -- A second F9 will then hang up the current call.
+        self:declineWaiting()
+    elseif self.state == self.STATE.CALL_INCOMING
+        or self.state == self.STATE.CALL_OUTGOING
+        or self.state == self.STATE.CALL_ACTIVE then
         self:endCall()
     end
 end
@@ -588,6 +607,8 @@ Mission00.saveSavegame = Utils.appendedFunction(Mission00.saveSavegame,
             -- only writes it when phone/nickname changes, so a clean session would
             -- never produce roleplayers.xml in the final savegame without this.
             RoleplayPhone:savePlayerRegistry(RoleplayPhone.cachedRegistry or {})
+            -- Persist server config so rpVoiceMode survives the tempsavegame swap.
+            RoleplayPhone:saveServerConfig()
         end
     end
 )

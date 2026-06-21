@@ -23,12 +23,15 @@ function RoleplayPhone:drawSettings()
     renderText(cx, headerY + headerH * 0.30, 0.016, g_i18n:getText("screen_title_settings"))
 
     -- ── Tabs ──────────────────────────────────────────────────────────────────
-    local tabY   = headerY - 0.038
-    local tabH   = 0.034
-    local tabW   = pw / 3
+    local tabY      = headerY - 0.038
+    local tabH      = 0.034
+    local isHost    = (g_server ~= nil)
+    local tabCount  = isHost and 4 or 3
+    local tabW      = pw / tabCount
     local genActive  = self.settingsTab == "general"
     local ringActive = self.settingsTab == "ringtones"
     local wallActive = self.settingsTab == "wallpaper"
+    local srvActive  = self.settingsTab == "server"
 
     local function tabBg(active)
         return active and 0.20 or 0.10, active and 0.13 or 0.08, active and 0.32 or 0.16
@@ -40,10 +43,14 @@ function RoleplayPhone:drawSettings()
     self:drawRect(px,         tabY, tabW, tabH, r1, g1, b1, 1.0)
     self:drawRect(px+tabW,    tabY, tabW, tabH, r2, g2, b2, 1.0)
     self:drawRect(px+tabW*2,  tabY, tabW, tabH, r3, g3, b3, 1.0)
+    if isHost then
+        local r4,g4,b4 = tabBg(srvActive)
+        self:drawRect(px+tabW*3, tabY, tabW, tabH, r4, g4, b4, 1.0)
+    end
 
     -- Active tab indicator
-    local activeTabX = genActive and px or ringActive and px+tabW or px+tabW*2
-    self:drawRect(activeTabX, tabY, tabW, 0.003, 0.20, 0.85, 0.35, 1.0)
+    local activeTabIdx = genActive and 0 or ringActive and 1 or wallActive and 2 or 3
+    self:drawRect(px + tabW * activeTabIdx, tabY, tabW, 0.003, 0.20, 0.85, 0.35, 1.0)
 
     setTextAlignment(RenderText.ALIGN_CENTER)
     setTextBold(genActive);  setTextColor(1,1,1, genActive  and 1.0 or 0.5)
@@ -52,10 +59,17 @@ function RoleplayPhone:drawSettings()
     renderText(px + tabW*1.5,  tabY + tabH*0.30, 0.010, g_i18n:getText("settings_tab_ringtones"))
     setTextBold(wallActive); setTextColor(1,1,1, wallActive and 1.0 or 0.5)
     renderText(px + tabW*2.5,  tabY + tabH*0.30, 0.010, g_i18n:getText("settings_tab_wallpaper"))
+    if isHost then
+        setTextBold(srvActive);  setTextColor(1,1,1, srvActive and 1.0 or 0.5)
+        renderText(px + tabW*3.5,  tabY + tabH*0.30, 0.010, "Server")
+    end
 
     self:addHitbox("settings_tab_general",   px,        tabY, tabW, tabH, {})
     self:addHitbox("settings_tab_ringtones", px+tabW,   tabY, tabW, tabH, {})
     self:addHitbox("settings_tab_wallpaper", px+tabW*2, tabY, tabW, tabH, {})
+    if isHost then
+        self:addHitbox("settings_tab_server", px+tabW*3, tabY, tabW, tabH, {})
+    end
 
     local rowH   = 0.040
     local indent = px + 0.012
@@ -259,6 +273,50 @@ function RoleplayPhone:drawSettings()
                 applyX, ctrlY - arrowH, applyW, arrowH,
                 g_i18n:getText("settings_apply"), 0.10, 0.38, 0.18, 0.012)
         end
+
+    -- ── SERVER TAB (host only) ────────────────────────────────────────────────
+    elseif self.settingsTab == "server" and g_server ~= nil then
+        local cy = tabY - 0.022
+        local cf = self.carrierForm or {}
+
+        -- Carrier Bot on/off toggle
+        setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
+        setTextColor(0.55, 0.45, 0.75, 0.85)
+        renderText(indent, cy, 0.009, "Carrier Bot")
+        cy = cy - 0.028
+
+        local carrierOn = self.settings.carrierEnabled or false
+        self:drawButton("setting_carrier_toggle",
+            indent, cy - rowH, optW, rowH,
+            carrierOn and g_i18n:getText("settings_on") or g_i18n:getText("settings_off"),
+            carrierOn and 0.08 or 0.22, carrierOn and 0.42 or 0.14, carrierOn and 0.18 or 0.14, 0.013)
+        if carrierOn then self:drawRect(indent, cy - rowH, 0.004, rowH, 0.20, 0.85, 0.35, 1.0) end
+        cy = cy - rowH - 0.022
+
+        -- Carrier Name field
+        setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
+        setTextColor(0.55, 0.45, 0.75, 0.85)
+        renderText(indent, cy, 0.009, "Carrier Name")
+        cy = cy - 0.028
+        local nameActive = cf.activeField == "name"
+        local nameVal    = cf.name ~= nil and cf.name or (self.settings.carrierName or "")
+        self:drawField("carrier_name_field", indent, cy - rowH, usable, rowH, "", nameVal, nameActive)
+        cy = cy - rowH - 0.014
+
+        -- Welcome Message field
+        setTextAlignment(RenderText.ALIGN_LEFT); setTextBold(false)
+        setTextColor(0.55, 0.45, 0.75, 0.85)
+        renderText(indent, cy, 0.009, "Welcome Message")
+        cy = cy - 0.028
+        local welcomeActive = cf.activeField == "welcome"
+        local welcomeVal    = cf.welcome ~= nil and cf.welcome or (self.settings.carrierWelcome or "")
+        self:drawField("carrier_welcome_field", indent, cy - rowH * 2, usable, rowH * 2, "", welcomeVal, welcomeActive, true)
+        cy = cy - rowH * 2 - 0.018
+
+        -- Save button
+        self:drawButton("carrier_save",
+            indent, cy - rowH, usable, rowH,
+            "Save", 0.10, 0.38, 0.18, 0.012)
     end
 end
 

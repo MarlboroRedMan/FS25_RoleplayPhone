@@ -394,10 +394,33 @@ Styled to match the base game map so it feels familiar.
 - Whether field ownership overlay is feasible
 - Full UX flow for route selection UI
 
-**True pathfinding — not pursuing:**
+**True pathfinding — not pursuing (pre-recorded was the plan):**
 - Road data is baked into i3d geometry, not in parseable XML
 - Traffic system XML is just vehicle definitions
 - Pre-recorded routes are the practical approach
+
+**WayPoint GPS integration — discovered June 2026 (changes the routing story):**
+- ModHub mod by plutogaming91 (mod_id=365275), released June 11 2026, 4.2 stars
+- Uses FS25 AI road splines + A* pathfinding — works on any map, no pre-recording needed
+- Pre-baked route graphs bundled for ~40 specific maps (explains the 15MB file size)
+- Exposes clean public API on global `WayPointGPS` table:
+  - `WayPointGPS.setTarget(worldX, worldZ)` — set single destination
+  - `WayPointGPS.addWaypoint(worldX, worldZ)` — add to multi-stop route
+  - `WayPointGPS.clearTarget()` — clear route
+- Draws route on minimap/ESC map overlay — exactly what we need for in-vehicle use
+- Integration: optional hook detected at runtime (`if WayPointGPS ~= nil`)
+  - With WayPoint GPS: phone sets destination → they handle routing + minimap display
+  - Without WayPoint GPS: we draw a simple straight-line overlay on minimap (no routing)
+- In-vehicle constraint: can't open phone in vehicle → minimap display essential → WayPoint GPS solves this
+
+**Destination selection UX (inside GPS phone app):**
+- **Map tab**: phone shows overview.dds map, player taps to drop pin → hits Navigate
+  - Screen-to-world coordinate math same approach as WayPoint GPS CTRL+click on ESC map
+- **Locations tab**: curated list of named points
+  - Player-saved custom locations ("Grain Silo", "My Farm", etc.)
+  - Contacts' farm locations (if farm position tracked)
+  - Eventually: sell points, shop locations
+- Both tabs call the same internal function: `setGPSDestination(worldX, worldZ)`
 
 Do NOT start until Market app exists and photo system is explored. This is a big feature.
 
@@ -467,6 +490,52 @@ inquiry process. Given Claude is already in the credits this probably isn't a cr
 but get confirmation first. Do not build this until you have an answer.
 
 Contact: https://www.anthropic.com
+
+### Carrier Bot
+Designed in the May 2026 NPC Contacts brainstorm — never made it into this file even though
+Phone Bill System and Emergency Broadcast System (below) already assume it exists. Writing it
+in properly now.
+
+A configurable server welcome message + auto-reply SMS bot — behaves like a real carrier
+texting a new phone for the first time.
+
+**Trigger:**
+- Fires once per player on their very first connection (checked against the player registry)
+- Sends a welcome message + notification
+- Never fires again for that player on that server
+
+**Carrier thread:**
+- Appears in Messages as its own thread from a named carrier (e.g. "FarmNet")
+- Has its own fake phone number — not tied to any real player
+- Player can reply; replies are handled by the auto-reply system below, never routed to the
+  host's normal inbox
+- Kept fully separate from any host↔player contact thread to avoid confusion
+
+**Auto-reply system:**
+- Keyword → response pairs (e.g. "RULES" → server rules text, "HELP" → help message)
+- Falls back to a configurable default "no match" response
+- Fully automated — host never manually responds
+- Same keyword-matching engine is meant to also power NPC Contacts / contract-employer
+  messaging later — one engine, multiple use cases (see Claude App and Farmbook above,
+  both already assume this engine exists)
+
+**Configuration — two layers:**
+- XML file (source of truth) — carrier name, carrier phone number, welcome message,
+  keyword/response pairs, default no-match response
+- In-game Settings UI (host-only tab) — quick edit for carrier name + welcome message only
+- XML changes require a server restart — no hot-reload. Server owners are expected to know XML.
+
+**Where it lives:**
+- Settings belong in `server_config.xml` (already exists — built June 1, 2026 for `rpVoiceMode`)
+  alongside any other future server-wide settings
+- New files: `CarrierConfig.lua` (load/hold config), `CarrierEvents.lua` (route replies through
+  the auto-reply logic)
+- Touches: `SettingsApp.lua` (host-only Server tab), `PlayerEvents.lua` (trigger on first
+  connect via registry check), `MessageManager.lua` (inject welcome message into new
+  player's thread)
+
+**Dependencies:** none — this can be built standalone. Phone Bill System and Emergency
+Broadcast System below build on top of it once it exists.
 
 ### Phone Bill System
 Carrier bot NPC sends an automated invoice at the end of each in-game day based on call duration.
@@ -701,3 +770,347 @@ Automated land rental management through the phone. Foundation already exists �
 - Auto-termination probability
 
 **Dependencies:** existing InvoiceManager, invoice categories already in place, Market App for player listings
+
+
+---
+
+## External Bridge + Discord Full Integration (SIM Dashboard Architecture)
+
+SIM Dashboard proves FS25 data is externally accessible via a proper mod bridge — bidirectional,
+real-time. The in-game Lua mod exposes events to a local bridge server; external apps
+(Discord bot, real companion phone app, anything) subscribe to it. farmdashboard.co.uk
+already does this for farm data. Same principle applies to RoleplayPhone events.
+
+This supersedes the webhook-only Discord approach documented above under Voice Chat Integration.
+Voice channels are not "not happening" — they're happening via this architecture.
+
+**What this enables:**
+- Discord voice channels that spin up automatically on call connect, clean up on hang up
+- Offline player notifications — someone calls while you're offline, Discord pings you
+- Call a player offline in FS25 but online in Discord — bridge routes the event, they get a ping,
+  reply routes back in-game when they log on
+- Dispatcher in Discord sending jobs to drivers in-game without being logged in at all
+- Every RoleplayPhone event (invoice, fine, crop alert, wages) reachable wherever players are
+- Real companion phone app possible — actual phone lights up with in-game messages
+
+**Architecture:**
+- In-game Lua mod → local bridge server (same pattern SIM Dashboard uses for FS25)
+- Bridge server → Discord bot, companion app, or any subscriber
+- Bidirectional — external services can push messages and triggers back into the game
+
+**Server config toggle (server_config.xml):**
+- Mode 0: in-game voice only (current, default — no Discord required)
+- Mode 1: Discord bridge (voice channels, offline notifications, full integration)
+- Mode 2: no voice (messaging and notifications only)
+- Nobody forced into extra setup. Full experience for servers that want it.
+
+**Prerequisites before building:**
+- Understand SIM Dashboard's bridge architecture completely before writing a line
+- Decide: build our own bridge server component or adapt SIM Dashboard's approach
+- Figure out Discord bot hosting strategy (G-Portal doesn't run bots natively)
+- Current in-game voice is NOT wasted — it becomes the standalone mode
+- DO NOT start until current mod features are rock solid and released
+
+---
+
+## Third-Party Mod Integrations (Optional Detection Hooks)
+
+All integrations are optional. RoleplayPhone detects at load time, hooks in if present,
+falls back to built-in behavior if not. Players without integrated mods get the standalone
+experience unchanged.
+
+Hook pattern: Utils.overwrittenFunction on the target mod's notification/event functions.
+Load order works in our favor (alphabetical — FS25_ loads before FS25_R).
+Detection: `if SomeModManager ~= nil then -- hook in end`
+
+### FS25_Invoices (Squallqt — github.com/Squallqt/FS25_Invoices)
+Already in downloads folder. MVC architecture, globally accessible at g_currentMission.invoicesManager.
+Hook points: InvoiceService.notifyNewInvoice, notifyOverdue, InvoicesManager:payInvoice.
+When detected: RoleplayPhone routes their notifications through the phone instead of game popups.
+Our own invoice system becomes the fallback for players who don't have it.
+License is All Rights Reserved — we hook from the outside, never touch their code. Fine legally.
+The 5-minute overdue spam via addIngameNotification is a good UX reason to reroute through phone.
+
+### Human Factors (ModHub mod_id=355371)
+MP confirmed via HF_AddMoneyEvent.lua network event. Hours in workedMsThisMonth.
+Hook: addIngameNotification for wages payments and hunger/thirst critical warnings.
+Integration: wages payment → phone message; hunger/thirst critical → phone alert.
+Farm stand food ordering in Market App becomes a real need rather than RP flavor.
+
+### RedTape (Ozz — same dev as Hire Purchasing, Task List, Used Equipment Yards)
+Policies, taxation, compliance fines, slurry violations, animal welfare.
+Hook: fine/penalty addIngameNotification events → phone message instead of popup.
+"Government notice: slurry violation — £500 fine" as a phone text is far more immersive.
+Already has explicit FS25_Invoices compatibility — sits naturally in the same ecosystem.
+
+### Hire Purchasing (Ozz — ModHub mod_id=327821)
+Equipment financing, monthly payments, 4.8★ with 415 ratings. Nine patches, MP solid.
+Hook: monthly payment event → phone notification ("Payment due: £850 on your John Deere 8R").
+Already listed as compatible with Rodd's Used Equipment.
+
+### Task List (Ozz — ModHub mod_id=312938)
+Farm management: groups, priorities, recurring schedules, live animal food tracking.
+Hook: animal food level warning, task completion → phone notification.
+Boss/worker task assignment pairs with role system already on roadmap.
+Auto-tracks animal food and production inputs — "South Barn feed getting low" as a text.
+
+### Farmland Market (Ritter)
+Multi-round land negotiation — offers and counter-offers for buying/selling fields.
+Integration: entire negotiation runs as a text thread. "Field 7 — offer £400k" → counter → deal.
+Watchlist alerts when a watched field comes up for sale → phone notification.
+Complements Farmland Auctions: private negotiated sales (this) vs public auctions (that).
+
+### Farmland Auctions (ModHub mod_id=357191)
+MP land auctions, optional NPC bidders, can lock out direct purchase.
+Hook: auction start, outbid, won/lost → phone notifications.
+"You've been outbid on Field 7, current bid £450k" as a text is genuinely useful.
+
+### Fresh (Ritter — rittermod.itch.io)
+Perishable goods with FIFO batch tracking, 100+ products configured. Open source.
+Integration: expiry warnings → farm stand economy urgency.
+Pairs with Crop Is Ready Alert for a full harvest-to-sale urgency loop.
+Farm stand ordering in Market App becomes high stakes when produce actually expires.
+
+### Bank Balance Earns Interest (ModHub mod_id=344192)
+1% APY default, paid monthly, open source, 4.7★.
+Hook: monthly interest payment → phone notification ("Interest earned this month: £X").
+Slots into the full financial lifecycle stack: wages in, interest in, invoices paid, taxes out.
+
+### Rodd's Used Equipment (rodderik.itch.io)
+"Call Rodd" mechanic — dealer searches inventory on request.
+Integration: phone call to Rodd triggers search; result comes back as a text message.
+Text-only (Rodd is an NPC — no voice without pre-recorded clips).
+Zip is in downloads — inspect Lua before planning hook points.
+Already listed as compatible with Hire Purchasing.
+
+### Price Alert (ModHub mod_id=361618)
+Price threshold monitoring, dropped 3 days ago.
+Either hook into this or build Market Price Alerts natively (already on roadmap).
+Decision: make when building Market App. Don't decide now.
+
+### Crop Is Ready Alert (ModHub mod_id=359752)
+Last harvestable month warning, fires once. Same dev as Menu Calculator.
+Hook: crop ready notification → phone text instead of popup.
+Pairs with Fresh for full urgency loop: harvest before month ends, sell before it spoils.
+
+### Realistic Livestock (Ritter)
+Individual animal genetics, breeding, diseases, production traits.
+Same dev as Fresh — the two together create a deeply interconnected simulation system.
+Integration TBD pending how much overlap there is with any livestock features we build.
+Worth watching as Ritter's ecosystem matures.
+
+### Ritter's Notification Log (itch.io)
+SP only as a mod. Not an integration target.
+His GitHub source shows exactly how to intercept addIngameNotification at engine level.
+Use as reference code for our own Notifications App hook. Not a dependency.
+
+---
+
+## Developer Outreach Plan
+
+Build first, reach out after. Show up with working code that already hooks into their mods —
+not a pitch. "RoleplayPhone integrates with your mod and here's what it looks like" lands
+completely differently than "I have an idea."
+
+**Ritter** — Fresh, Realistic Livestock, Farmland Market, Notification Log, Transaction Log.
+Has said he wants to bring his SP mods to MP. Priority outreach target.
+A working relationship here could accelerate MP versions of his whole ecosystem.
+
+**Ozz** — RedTape, Hire Purchasing, Task List, Used Equipment Yards.
+Building the financial and management backbone RoleplayPhone sits on top of.
+RoleplayPhone is literally the communication layer his ecosystem is missing.
+All open source on GitHub — second priority outreach.
+
+**Squallqt** — FS25_Invoices.
+No technical outreach needed (we hook from outside, no changes to his code).
+A courtesy heads-up and maybe a compatibility note on his README is enough.
+
+**Timing:** After v1.0 release. Not before.
+
+---
+
+## Polish & Onboarding — Post v1.0
+
+### Tutorial System — Modular, Interactive, Player-Driven
+
+A full onboarding framework. Not a wall of text — an interactive guided tour the player
+controls. Designed in one session (June 13, 2026). Significant build effort, do not rush.
+Inspired by FS25_MoistureSystem's startup dialog concept.
+
+---
+
+#### First Join Flow
+
+Triggered once per player on their very first join. Never shown again unless replayed.
+A non-blocking HUD overlay — phone (F7) still works while it's visible.
+
+**Page 1 — Welcome + Controls**
+
+Two sections, top to bottom:
+
+*Server Message (top):*
+- Freeform text written by the server admin
+- Stored in `server_config.xml` as `<serverMessage>` field
+- Can be server name, rules, welcome note — whatever the admin wants
+- If field is empty, this section does not render
+
+*Main Controls (bottom, always shown, baked into l10n):*
+- Press **F7** to open and close your phone
+- Press **F10** to answer a call while in a vehicle
+- Press **F9** to decline a call or hang up
+
+Two buttons: **"Got It"** (exits tutorial entirely) and **"Next"** (continues to hub)
+
+---
+
+**Page 2 — Tutorial Hub**
+
+A list of every available app tutorial. Player taps what they want to learn about.
+Hitting **"OK"** at any point closes the whole tutorial.
+
+Example list:
+- Calls & Messages
+- Contacts
+- Invoices
+- Settings
+- Market *(only shown once Market app is built)*
+- *(new apps register here automatically)*
+
+Each completed tutorial shows a **checkmark** next to its name.
+Player can do them in any order, skip any, return to the list after each one.
+
+---
+
+#### Per-App Tutorials — Interactive Guided Walkthroughs
+
+When a player selects an app from the hub, the tutorial guides them through it
+step by step. Player does the clicking — tutorial instructs and narrates.
+
+**How it works:**
+- Phone opens (or player is told to press F7)
+- A visual indicator (arrow or highlight) appears on the phone UI pointing at exactly
+  what the player needs to tap — they cannot miss it
+- Player taps it — indicator moves to the next element
+- Tutorial narrates what they're looking at as they go
+- Covers the key interactions for that app, not every edge case
+- When done, returns player to the tutorial hub list
+
+**Why player-driven (not auto-piloted):**
+- Player builds actual muscle memory navigating there themselves
+- Learning sticks because they did it, not watched it
+- Phone stays under player control at all times
+
+**Visual indicators:**
+- Arrow or highlight ring drawn over the phone UI by the tutorial draw layer
+- Since we control every pixel of the phone's draw functions, we know exactly
+  where every button is — placing an indicator on any element is straightforward
+
+---
+
+#### Replay from Settings
+
+Settings app gets a **"Tutorial"** button or section.
+Tapping it reopens the tutorial hub (Page 2) directly — same list, same experience.
+Per-app checkmarks reflect what the player has already completed.
+Player can replay any individual app tutorial as many times as they want.
+
+---
+
+#### Technical Architecture
+
+**Persistence:**
+- Each tutorial has its own completion flag in the per-player server-side data file
+- e.g. `tutorialShown_welcome`, `tutorialShown_invoices`, `tutorialShown_market`
+- Completing the welcome tour does NOT mark app tutorials as seen
+- New apps add their own flag — no changes to existing flags needed
+
+**First-join flow:**
+- On PlayerHello: host checks `tutorialShown_welcome` flag in player's data file
+- If false → includes `showTutorial=true` + `serverMessage` in data push to client
+- Client shows Page 1 on load
+- Player hits "Got It" or completes hub → client sends event to host → host saves flag
+
+**Modular registration:**
+- Each app tutorial registers itself into the hub list at load time
+- Tutorial hub builds its list dynamically — no hardcoded app list
+- New apps just register on load, appear in hub automatically
+
+**Implementation touches (when time comes):**
+- `server_config.xml` — add `<serverMessage>` field
+- `PhoneSave.lua` — read/write per-tutorial flags in player data + serverMessage in server config
+- `PlayerEvents.lua` — include `showTutorial` + `serverMessage` in per-connection data push
+- `TutorialManager.lua` (new) — hub state, page navigation, visual indicator drawing,
+  tutorial registration API, checkmark tracking
+- Each app — registers its own tutorial steps into TutorialManager on load
+- Settings app — Tutorials section with replay buttons per tutorial
+- New event (client→host) — save individual tutorial completion flags
+- `l10n_en.xml` — all tutorial text strings
+
+**Server-side toggle:**
+- `server_config.xml` gets `<tutorialEnabled>` field, defaults to true
+- When false: automatic first-join popup is suppressed entirely
+- The tutorial hub in the phone's **Settings app** always remains accessible regardless
+- Players can always open Settings → Tutorial and run any tutorial whenever they want
+- Toggle only controls whether the popup is pushed at new players automatically
+
+DO NOT BUILD until after v1.0 release. Design is complete. This is significant work.
+
+
+## New Apps — Future
+
+### Notifications App
+Scrollable history of all phone notifications — invoices, fines, wages, alerts, crop warnings.
+Think your phone's notification shade. Stuff flies by too fast in-game — this captures it all.
+
+How it works:
+- Hook addIngameNotification at engine level (reference: Ritter's Notification Log GitHub)
+- Capture and store per-player notification history locally on each client
+- Scrollable log in the app with timestamps and type icons
+- No cross-player sync needed — notifications are already per-client
+
+No third-party mods required. Works standalone from day one, gets richer with integrations.
+
+### Basic Calculator App
+Simple number cruncher: addition, subtraction, multiplication, division, decimals, result history.
+No engine hooks. Pure UI. Probably the fastest app to build on the entire list.
+Everyone already does this on their real phone. Fits naturally.
+Reference: Menu Calculator (ModHub mod_id=352193) — build native, no dependency.
+
+### Field Calculator App
+Per-field input estimates: seed, lime, fertilizer, herbicide needed before starting work.
+Data pulled directly from engine — field sizes, soil conditions, crop types all accessible natively.
+Precision Farming data used if available, falls back gracefully without it.
+Results can be texted directly to a contact (contractor sends a quote before starting work).
+Reference: Field Calculator (ModHub mod_id=361788) — build native, no dependency.
+
+### Workers / Farmhand Status App
+AI worker job status — active assignments, field, task. Notification-based.
+NO jump-to-vehicle. That kills immersion and it's not RP.
+Hook worker completion/failure via addIngameNotification.
+"Worker on Field 12 finished harvesting" delivered as a phone message.
+RP framing: text your farmhand "how's it going on Field 12" and get a status back.
+
+---
+
+### Farm Operations App
+
+Inspired by FS25_FarmOperationsDashboard (mod_id=364188, VeteranModding, 4.8 stars).
+That mod proves all this data is accessible via standard engine APIs -- 0.11 MB of pure Lua.
+Same farm-scoping as invoices: player sees their own farm's data only, filtered by farmId.
+
+**Tabs:**
+- **Fields** -- growth state, harvest-ready, withered, plowed, growing. Watch/Urgent alerts.
+- **Animals** -- food and health levels per pen
+- **Productions** -- input supply running low, output storage filling up
+- **Vehicles** -- fuel, wear, hours, current use state
+- **Prices** -- sell point opportunities, max-price alerts
+
+**Notifications:**
+- Threshold-based alerts pushed to the phone notification system
+- Examples: field withered, animal health dropping, vehicle fuel critical, silo at capacity
+- Player or server admin configures thresholds
+- Ties directly into whatever notification framework we build
+
+**Tutorial:** Gets its own tutorial page in the Tutorial System explaining each tab.
+
+Reference FS25_FarmOperationsDashboard source for API patterns when building.

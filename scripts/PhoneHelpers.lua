@@ -536,6 +536,7 @@ function RoleplayPhone:loadPlayerRegistry()
             fileId   = getXMLString(xmlFile, key .. "#fileId")    or "",
             phone    = getXMLString(xmlFile, key .. "#phone")     or "",
             nickname = getXMLString(xmlFile, key .. "#nickname")  or "",
+            welcomed = getXMLBool(xmlFile,   key .. "#welcomed")   or false,
         })
         i = i + 1
     end
@@ -568,6 +569,7 @@ function RoleplayPhone:savePlayerRegistry(registry)
         setXMLString(xmlFile, key .. "#fileId",   entry.fileId   or "")
         setXMLString(xmlFile, key .. "#phone",    entry.phone    or "")
         setXMLString(xmlFile, key .. "#nickname", entry.nickname or "")
+        setXMLBool(xmlFile,   key .. "#welcomed", entry.welcomed or false)
     end
     saveXMLFile(xmlFile)
     delete(xmlFile)
@@ -600,7 +602,7 @@ function RoleplayPhone:getOrCreateRegistryEntry(uniqueId, phone, nickname)
 
     -- New player — build their fileId and add to in-memory registry
     local fileId = self:buildFileId(uniqueId, registry)
-    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "", nickname = nickname or "" }
+    local entry = { uniqueId = uniqueId, fileId = fileId, phone = phone or "", nickname = nickname or "", welcomed = false }
     table.insert(registry, entry)
     -- cachedRegistry IS registry (same table reference), so it's already updated
     self:savePlayerRegistry(registry)

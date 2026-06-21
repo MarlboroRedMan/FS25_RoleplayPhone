@@ -80,7 +80,7 @@ function RoleplayPhone:sendMessage()
         for uid, u in pairs(RoleplayPhone.onlineUsers) do
             if u.uniqueId == toUniqueId then found = true; break end
         end
-        if not found then return end
+        if not found and toUniqueId ~= "carrier_bot" then return end
     else
         local c = ContactManager:getContact(self.selectedContact)
         if not c then return end
@@ -103,6 +103,26 @@ function RoleplayPhone:sendMessage()
                       and g_currentMission.environment.currentDay) or 0
     local gameTime = (g_currentMission and g_currentMission.environment
                       and g_currentMission.environment.dayTime) or 0
+
+    -- Carrier Bot: intercept messages directed to the carrier thread
+    if toUniqueId == "carrier_bot" then
+        if not RoleplayPhone.settings.carrierEnabled then
+            self.messageCompose.text = ""
+            return
+        end
+        -- Record the outgoing message in local thread (already shown as sent)
+        self:receiveMessage(self.selectedContact, myUserId, myName,
+            text, gameDay, true, gameTime)
+        -- Route to auto-reply: host handles directly, clients send event to server
+        if g_server ~= nil then
+            RoleplayPhone:carrierBotAutoReply(myUniqueId, text, nil)
+        elseif g_client ~= nil then
+            g_client:getServerConnection():sendEvent(RI_CarrierReplyEvent.new(text))
+        end
+        self.messageCompose.text = ""
+        return
+    end
+
     self:receiveMessage(self.selectedContact, myUserId, myName, text, gameDay, true, gameTime)
     local evt = RI_MessageEvent.new(myUniqueId, toUniqueId, myName, text, gameDay, gameTime)
     if g_server ~= nil then

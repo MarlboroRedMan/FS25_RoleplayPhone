@@ -134,6 +134,15 @@ function RoleplayPhone:onHitboxClicked(hb)
     if hb.id == "settings_tab_general"   then self.settingsTab = "general";   return end
     if hb.id == "settings_tab_ringtones" then self.settingsTab = "ringtones"; return end
     if hb.id == "settings_tab_wallpaper" then self.settingsTab = "wallpaper"; return end
+    if hb.id == "settings_tab_server" and g_server ~= nil then
+        self.settingsTab = "server"
+        -- Reset carrier form to current settings values when tab is opened
+        self.carrierForm = self.carrierForm or {}
+        self.carrierForm.name    = self.settings.carrierName    or "FarmNet"
+        self.carrierForm.welcome = self.settings.carrierWelcome or "Welcome to the server!"
+        self.carrierForm.activeField = nil
+        return
+    end
 
     -- Wallpaper preview / apply
     if hb.id == "wallp_prev" then
@@ -168,6 +177,39 @@ function RoleplayPhone:onHitboxClicked(hb)
             or  g_i18n:getText("settings_off")
         NotificationManager:push("info",
             string.format(g_i18n:getText("settings_rp_voice_saved_fmt"), state))
+        return
+    end
+
+    -- Carrier Bot server tab controls (host only)
+    if hb.id == "setting_carrier_toggle" and g_server ~= nil then
+        self.settings.carrierEnabled = not (self.settings.carrierEnabled or false)
+        self:saveCarrierQuickConfig()
+        return
+    end
+    if hb.id == "carrier_name_field" and g_server ~= nil then
+        self.carrierForm = self.carrierForm or {}
+        if self.carrierForm.name == nil then
+            self.carrierForm.name = self.settings.carrierName or "FarmNet"
+        end
+        self.carrierForm.activeField = "name"
+        self:activateFieldCursor(self.carrierForm.name)
+        return
+    end
+    if hb.id == "carrier_welcome_field" and g_server ~= nil then
+        self.carrierForm = self.carrierForm or {}
+        if self.carrierForm.welcome == nil then
+            self.carrierForm.welcome = self.settings.carrierWelcome or "Welcome to the server!"
+        end
+        self.carrierForm.activeField = "welcome"
+        self:activateFieldCursor(self.carrierForm.welcome)
+        return
+    end
+    if hb.id == "carrier_save" and g_server ~= nil then
+        local cf = self.carrierForm or {}
+        if cf.name    ~= nil then self.settings.carrierName    = cf.name    end
+        if cf.welcome ~= nil then self.settings.carrierWelcome = cf.welcome end
+        self:saveCarrierQuickConfig()
+        NotificationManager:push("info", "Carrier Bot settings saved.")
         return
     end
 
@@ -208,9 +250,10 @@ function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
     -- Handles the case where a field was deactivated without calling deactivateTextInputContext.
     if self._textInputContextActive then
         local hasActiveField =
-            (self.form.activeField ~= nil      and self.state == self.STATE.INVOICE_CREATE) or
-            (self.contactForm.activeField ~= nil and self.state == self.STATE.CONTACT_CREATE) or
-            (self.messageCompose.active          and self.state == self.STATE.MESSAGE_THREAD)
+            (self.form.activeField ~= nil           and self.state == self.STATE.INVOICE_CREATE) or
+            (self.contactForm.activeField ~= nil    and self.state == self.STATE.CONTACT_CREATE) or
+            (self.messageCompose.active             and self.state == self.STATE.MESSAGE_THREAD) or
+            (self.carrierForm and self.carrierForm.activeField ~= nil and self.state == self.STATE.SETTINGS)
         if not hasActiveField then
             self:deactivateTextInputContext()
         end
@@ -473,6 +516,67 @@ function RoleplayPhone:keyEvent(unicode, sym, modifier, isDown)
             self.messageCompose.text = self:tcInsert(val, unicodeToUtf8(unicode), 300)
             return true
         end
+    end
+
+    -- ── Carrier form text fields (Settings > Server tab) ───────────────────
+    if self.carrierForm and self.carrierForm.activeField and self.state == self.STATE.SETTINGS then
+        local field = self.carrierForm.activeField
+        local val   = self.carrierForm[field] or ""
+
+        ensureCursor(val)
+
+        if sym == Input.KEY_tab or sym == Input.KEY_return then
+            -- Tab cycles name → welcome → deactivate
+            if field == "name" then
+                self.carrierForm.activeField = "welcome"
+                self:activateFieldCursor(self.carrierForm.welcome or "")
+            else
+                self.carrierForm.activeField = nil
+                self:deactivateTextInputContext()
+            end
+            return true
+        end
+        if isCtrlA then
+            local len = utf8Strlen(val)
+            self.textCursor = { pos = len + 1, selStart = 1, selEnd = len + 1 }
+            return true
+        end
+        if isLeft  then self:tcMoveCursor(val, -1, isCtrl); return true end
+        if isRight then self:tcMoveCursor(val,  1, isCtrl); return true end
+        if isHome  then
+            self.textCursor.pos = 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isEnd then
+            self.textCursor.pos = utf8Strlen(val) + 1; self.textCursor.selStart = nil
+            self.textCursor.selEnd = nil; self._cursorBlinkOrigin = getTimeSec()
+            return true
+        end
+        if isBackspace then
+            local s = self:getSelectionRange()
+            self.carrierForm[field] = s and self:tcDeleteSelection(val) or backspaceAt(val)
+            return true
+        end
+        if isFwdDel then
+            local s = self:getSelectionRange()
+            self.carrierForm[field] = s and self:tcDeleteSelection(val) or forwardDeleteAt(val)
+            return true
+        end
+        if isCtrlC then
+            local s, e = self:getSelectionRange()
+            RoleplayPhone._clipboard = s and utf8Substr(val, s-1, e-s) or val
+            return true
+        end
+        if isCtrlV then
+            self.carrierForm[field] = self:tcInsert(val, RoleplayPhone._clipboard, 120)
+            return true
+        end
+        if unicode and unicode > 31 and (unicode < 127 or getCanRenderUnicode(unicode)) then
+            self.carrierForm[field] = self:tcInsert(val, unicodeToUtf8(unicode), 120)
+            return true
+        end
+        return false
     end
 
     return false

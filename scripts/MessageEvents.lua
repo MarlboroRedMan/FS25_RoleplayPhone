@@ -218,11 +218,18 @@ function RI_MessageSyncEvent:run(connection)
         local _, key = RoleplayPhone:getContactByPhone(otherPhone)
         if not key then
             key = otherUniqueId ~= "" and ("u_" .. otherUniqueId) or "u_unknown"
-            RoleplayPhone.messageDisplayNames[key] = {
-                name   = m.senderName,
-                phone  = otherPhone,
-                userId = otherUserId,
-            }
+            -- Preserve carrier phone if the server sync has an empty phone for this entry
+            local existingEntry = RoleplayPhone.messageDisplayNames[key]
+            if existingEntry and otherPhone == "" and (existingEntry.phone or "") ~= "" then
+                existingEntry.name   = m.senderName
+                existingEntry.userId = otherUserId
+            else
+                RoleplayPhone.messageDisplayNames[key] = {
+                    name   = m.senderName,
+                    phone  = otherPhone,
+                    userId = otherUserId,
+                }
+            end
         end
         RoleplayPhone:receiveMessage(key, 0, m.senderName,
                                      m.text, m.gameDay, isSent, m.gameTime,

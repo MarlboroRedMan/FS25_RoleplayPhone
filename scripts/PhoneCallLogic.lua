@@ -104,7 +104,27 @@ function RoleplayPhone:startCall()
 end
 
 function RoleplayPhone:onIncomingCall(fromUserId, callerName, callerNum)
-    if self.state == self.STATE.CALL_OUTGOING or self.state == self.STATE.CALL_INCOMING or self.state == self.STATE.CALL_ACTIVE then
+    -- Already in a call: queue as call waiting (but only one waiting call at a time)
+    if self.state == self.STATE.CALL_ACTIVE and self.pendingIncoming == nil then
+        local displayName = callerNum ~= "" and callerNum or g_i18n:getText("phone_unknown_contact")
+        for _, c in ipairs(ContactManager.contacts) do
+            if c.phone and c.phone ~= "" and c.phone == callerNum then
+                displayName = c.name or displayName; break
+            end
+        end
+        self.pendingIncoming = {
+            fromUserId  = fromUserId,
+            contactName = displayName,
+            contactNum  = callerNum,
+            ringTimer   = 0,
+        }
+        if self.ringSample and self.ringSample ~= 0 then playSample(self.ringSample, 0, 1.0, 0, 0, 0) end
+        print(string.format("[RoleplayPhone] Call waiting: incoming from %s", displayName))
+        return
+    end
+    -- Busy: already handling a call (outgoing, incoming, or already have a waiting call)
+    if self.state == self.STATE.CALL_OUTGOING or self.state == self.STATE.CALL_INCOMING
+       or self.state == self.STATE.CALL_ACTIVE then
         local myUserId = self:getMyUserId()
         local evt = RI_CallEvent.new("busy", myUserId, fromUserId, "", "")
         if g_server ~= nil then g_server:broadcastEvent(evt) elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
@@ -212,15 +232,15 @@ end
 function RoleplayPhone:_restoreAfterCall()
     local prevState = self.call.prevState or self.STATE.HOME
     self:stopRingtone()
-    -- Remove from active calls. Server broadcasts RI_VoiceCallEvent to bystanders.
+    -- Remove from active calls. If host, broadcast updated snapshot to all clients so
+    -- bystanders recompute isolation. If client, the server handles this via RI_CallEvent handler.
     local myUserId = self:getMyUserId()
-    local remoteId = (self.call.fromUserId == myUserId) and self.call.toUserId or self.call.fromUserId
-    self:removeActiveCall(myUserId, remoteId)
+    self:removeActiveCall(myUserId)
     if g_server ~= nil then
-        g_server:broadcastEvent(RI_VoiceCallEvent.new(myUserId, remoteId, false))
+        g_server:broadcastEvent(RI_VoiceCallEvent.new(self.activeCalls))
     end
     local wasOpen = self.call.wasOpen or false
-    self.call = { prevState=self.STATE.HOME, startTime=0, fromUserId=0, toUserId=0, contactName="", contactNum="", wasOpen=false }
+    self.call = { prevState=self.STATE.HOME, startTime=0, fromUserId=0, toUserId=0, contactName="", contactNum="", wasOpen=false, members={} }
     if prevState ~= self.STATE.CLOSED and self.isOpen then
         -- Decline case: phone stayed open throughout — just restore state
         if self.incomingCallActionEventId then
@@ -341,4 +361,46 @@ function RoleplayPhone:startCallByPhone(phoneNum)
     end
     print(string.format("[RoleplayPhone] Calling by number %s -> userId %d (%s)",
         phoneNum, toUserId, callerName))
+end
+
+-- ─── CALL WAITING ─────────────────────────────────────────────────────────────
+
+-- Answer the waiting call while staying in the current call.
+-- The waiting caller joins the existing call group (group call begins).
+-- Triggered by F10 when state == CALL_ACTIVE and pendingIncoming ~= nil.
+function RoleplayPhone:answerWaiting()
+    if not self.pendingIncoming then return end
+    self:stopRingtone()
+    local myUserId = self:getMyUserId()
+    local fromId   = self.pendingIncoming.fromUserId
+
+    if g_server ~= nil then
+        -- Host: update group directly, then broadcast snapshot + answer event
+        RoleplayPhone:addActiveCall(myUserId, fromId)
+        g_server:broadcastEvent(RI_VoiceCallEvent.new(self.activeCalls))
+        g_server:broadcastEvent(RI_CallEvent.new("answer", myUserId, fromId, "", ""))
+    else
+        -- Client: send answer to server; server handles group merge + broadcast
+        g_client:getServerConnection():sendEvent(
+            RI_CallEvent.new("answer", myUserId, fromId, "", ""))
+    end
+
+    -- Log a call history entry for the newly joined member
+    self:addCallHistoryEntry("incoming", self.pendingIncoming.contactName, self.pendingIncoming.contactNum)
+    self.pendingIncoming = nil
+    print(string.format("[RoleplayPhone] Answered waiting call from userId %d — group call started", fromId))
+end
+
+-- Decline the waiting call, keeping the current call active.
+-- Triggered by F9 when state == CALL_ACTIVE and pendingIncoming ~= nil.
+function RoleplayPhone:declineWaiting()
+    if not self.pendingIncoming then return end
+    self:stopRingtone()
+    local myUserId = self:getMyUserId()
+    local fromId   = self.pendingIncoming.fromUserId
+    local evt = RI_CallEvent.new("decline", myUserId, fromId, "", "")
+    if g_server ~= nil then g_server:broadcastEvent(evt)
+    elseif g_client ~= nil then g_client:getServerConnection():sendEvent(evt) end
+    self.pendingIncoming = nil
+    print(string.format("[RoleplayPhone] Declined waiting call from userId %d", fromId))
 end

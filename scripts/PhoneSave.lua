@@ -45,8 +45,14 @@ function RoleplayPhone:loadServerConfig()
     if not fileExists(path) then
         -- First run: auto-generate with true (default for roleplay servers)
         print("[PhoneSave] No server_config.xml — generating defaults (rpVoiceMode=true)")
-        self.settings.rpVoiceMode = true
-        self.rpVoiceModeConfig    = true
+        self.settings.rpVoiceMode    = true
+        self.rpVoiceModeConfig       = true
+        self.settings.carrierEnabled  = false
+        self.settings.carrierName     = "FarmNet"
+        self.settings.carrierPhone    = "000-CARRIER"
+        self.settings.carrierWelcome  = "Welcome to the server!"
+        self.settings.carrierDefault  = "Sorry, I didn't understand that."
+        self.settings.carrierKeywords = {}
         self:saveServerConfig()
         return
     end
@@ -61,6 +67,20 @@ function RoleplayPhone:loadServerConfig()
     local value = (vm == true)
     self.settings.rpVoiceMode = value
     self.rpVoiceModeConfig    = value
+    -- Carrier Bot settings
+    self.settings.carrierEnabled  = getXMLBool(xmlFile,   "serverConfig#carrierEnabled")  or false
+    self.settings.carrierName     = getXMLString(xmlFile, "serverConfig#carrierName")     or "FarmNet"
+    self.settings.carrierPhone    = getXMLString(xmlFile, "serverConfig#carrierPhone")    or "000-CARRIER"
+    self.settings.carrierWelcome  = getXMLString(xmlFile, "serverConfig#carrierWelcome")  or "Welcome to the server!"
+    self.settings.carrierDefault  = getXMLString(xmlFile, "serverConfig#carrierDefault")  or "Sorry, I didn't understand that."
+    self.settings.carrierKeywords = {}
+    local ki = 0
+    while true do
+        local kpath = string.format("serverConfig.keyword(%d)", ki)
+        local k = getXMLString(xmlFile, kpath .. "#k"); if k == nil then break end
+        table.insert(self.settings.carrierKeywords, { k = k:upper(), r = getXMLString(xmlFile, kpath .. "#r") or "" })
+        ki = ki + 1
+    end
     delete(xmlFile)
     print(string.format("[PhoneSave] Server config loaded: rpVoiceMode=%s", tostring(value)))
 end
@@ -75,7 +95,19 @@ function RoleplayPhone:saveServerConfig()
         print("[PhoneSave] Failed to create server_config.xml")
         return
     end
+    local settings = self.settings
     setXMLBool(xmlFile, "serverConfig#rpVoiceMode", self.rpVoiceModeConfig or false)
+    -- Carrier Bot settings
+    setXMLBool(xmlFile,   "serverConfig#carrierEnabled",  settings.carrierEnabled  or false)
+    setXMLString(xmlFile, "serverConfig#carrierName",     settings.carrierName     or "FarmNet")
+    setXMLString(xmlFile, "serverConfig#carrierPhone",    settings.carrierPhone    or "000-CARRIER")
+    setXMLString(xmlFile, "serverConfig#carrierWelcome",  settings.carrierWelcome  or "")
+    setXMLString(xmlFile, "serverConfig#carrierDefault",  settings.carrierDefault  or "")
+    for i, kw in ipairs(settings.carrierKeywords or {}) do
+        local kpath = string.format("serverConfig.keyword(%d)", i - 1)
+        setXMLString(xmlFile, kpath .. "#k", kw.k or "")
+        setXMLString(xmlFile, kpath .. "#r", kw.r or "")
+    end
     saveXMLFile(xmlFile)
     delete(xmlFile)
     print(string.format("[PhoneSave] Server config saved: rpVoiceMode=%s", tostring(self.rpVoiceModeConfig)))

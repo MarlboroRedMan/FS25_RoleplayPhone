@@ -125,10 +125,31 @@ function RI_PlayerHelloEvent:run(connection)
                 connection:sendEvent(RI_ContactSyncEvent.new({}))
                 print(string.format("[RoleplayPhone] New player %s — no data file yet", self.playerName))
             end
+            -- Carrier Bot: send welcome on first ever join
+            if RoleplayPhone.settings.carrierEnabled and not entry.welcomed then
+                entry.welcomed = true
+                RoleplayPhone:savePlayerRegistry(RoleplayPhone.cachedRegistry)
+                RoleplayPhone:carrierBotSendWelcome(
+                    self.uniqueId, self.playerName, entry.fileId, connection)
+            end
         end
 
         -- Push current server config to the new client
-        connection:sendEvent(RI_ServerConfigEvent.new(RoleplayPhone.settings.rpVoiceMode))
+        connection:sendEvent(RI_ServerConfigEvent.new(
+            RoleplayPhone.settings.rpVoiceMode,
+            RoleplayPhone.settings.carrierName,
+            RoleplayPhone.settings.carrierPhone))
+
+        -- Sync current active calls so the joining client builds correct voice isolation immediately.
+        -- We send here (not in onUserAdded) because the client only sends PlayerHello AFTER
+        -- CURRENT_MISSION_LOADED fires — meaning the mod is fully ready to handle the event.
+        -- Sends the full group snapshot rather than individual pair events to stay consistent
+        -- with the new group-call architecture.
+        if #RoleplayPhone.activeCalls > 0 then
+            connection:sendEvent(RI_VoiceCallEvent.new(RoleplayPhone.activeCalls))
+            print(string.format("[RoleplayPhone] Synced %d active call group(s) to %s",
+                #RoleplayPhone.activeCalls, self.playerName))
+        end
 
         print(string.format("[RoleplayPhone] PlayerHello: %s (userId=%d farmId=%d phone=%s)",
             self.playerName, self.playerUserId, self.farmId, self.phoneNumber))
@@ -210,18 +231,24 @@ function RI_ServerConfigEvent.emptyNew()
     return Event.new(RI_ServerConfigEvent_mt)
 end
 
-function RI_ServerConfigEvent.new(rpVoiceMode)
+function RI_ServerConfigEvent.new(rpVoiceMode, carrierName, carrierPhone)
     local self = RI_ServerConfigEvent.emptyNew()
-    self.rpVoiceMode = rpVoiceMode or false
+    self.rpVoiceMode  = rpVoiceMode  or false
+    self.carrierName  = carrierName  or ""
+    self.carrierPhone = carrierPhone or ""
     return self
 end
 
 function RI_ServerConfigEvent:writeStream(streamId, connection)
-    streamWriteBool(streamId, self.rpVoiceMode or false)
+    streamWriteBool(streamId,   self.rpVoiceMode  or false)
+    streamWriteString(streamId, self.carrierName  or "")
+    streamWriteString(streamId, self.carrierPhone or "")
 end
 
 function RI_ServerConfigEvent:readStream(streamId, connection)
-    self.rpVoiceMode = streamReadBool(streamId)
+    self.rpVoiceMode  = streamReadBool(streamId)
+    self.carrierName  = streamReadString(streamId)
+    self.carrierPhone = streamReadString(streamId)
     self:run(connection)
 end
 
@@ -229,6 +256,13 @@ function RI_ServerConfigEvent:run(connection)
     if g_server ~= nil then return end  -- host doesn't process its own config
     RoleplayPhone.settings.rpVoiceMode = self.rpVoiceMode
     RoleplayPhone:applyVoiceMode()
+    if self.carrierName and self.carrierName ~= "" then
+        RoleplayPhone.messageDisplayNames["u_carrier_bot"] = {
+            name   = self.carrierName,
+            phone  = self.carrierPhone or "",
+            userId = 0,
+        }
+    end
     print(string.format("[PlayerEvents] ServerConfig received: rpVoiceMode=%s",
         tostring(self.rpVoiceMode)))
 end

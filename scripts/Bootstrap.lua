@@ -76,6 +76,13 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
         RoleplayPhone:loadPlayerData(filename, true)
         print("[RoleplayPhone] Host data loaded: " .. filename)
 
+        -- Carrier Bot: send welcome if this is the host's first time on this server
+        if RoleplayPhone.settings.carrierEnabled and not entry.welcomed then
+            entry.welcomed = true
+            RoleplayPhone:savePlayerRegistry(RoleplayPhone.cachedRegistry)
+            RoleplayPhone:carrierBotSendWelcome(myUniqueId, myName, entry.fileId, nil)
+        end
+
         -- Cache all known offline player files so they survive a solo-session save.
         local reg = RoleplayPhone:loadPlayerRegistry()
         RoleplayPhone.cachedRegistry = reg
@@ -113,6 +120,11 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
                 end
                 RoleplayPhone.messageDisplayNames[key] = info
             end
+        end
+        -- Carrier Bot: restore carrier phone in messageDisplayNames after repopulation
+        if RoleplayPhone.messages["u_carrier_bot"] and RoleplayPhone.settings.carrierPhone then
+            local d = RoleplayPhone.messageDisplayNames["u_carrier_bot"]
+            if d then d.phone = RoleplayPhone.settings.carrierPhone end
         end
     end
 
@@ -152,6 +164,8 @@ g_messageCenter:subscribe(MessageType.CURRENT_MISSION_LOADED, function()
     -- Clients get this via RI_ServerConfigEvent. The host never receives its own broadcast
     -- so must call this explicitly here.
     RoleplayPhone:applyVoiceMode()
+
+
 end, RoleplayPhone)
 
 -- ─── Player disconnect handling ───────────────────────────────────────────────
@@ -190,6 +204,36 @@ g_messageCenter:subscribe(MessageType.USER_REMOVED, function(self, user, disconn
         print(string.format("[RoleplayPhone] Saved + cached offline data: %s", info.name or tostring(userId)))
     end
 
+    -- Clean up any active call this player was part of.
+    -- USER_REMOVED fires before the connection is fully gone, so we handle this here
+    -- rather than relying on a "end" event that will never arrive from a disconnected client.
+    local myUserId = RoleplayPhone:getMyUserId()
+    local remaining = RoleplayPhone:removeActiveCall(userId)
+    if remaining then
+        -- Broadcast updated snapshot to all clients (voice isolation rebuilds everywhere)
+        g_server:broadcastEvent(RI_VoiceCallEvent.new(RoleplayPhone.activeCalls))
+        if #remaining == 1 then
+            -- Group dissolved — notify the last remaining member
+            local lastId = remaining[1]
+            if lastId == myUserId then
+                RoleplayPhone:onCallEnded()
+            else
+                g_server:broadcastEvent(RI_CallEvent.new("end", userId, lastId, "", ""))
+            end
+            print(string.format("[RoleplayPhone] USER_REMOVED: %d left, group dissolved, last member=%d notified",
+                userId, lastId))
+        elseif #remaining >= 2 then
+            -- Group continues for remaining members — VoiceCallEvent already sent above
+            print(string.format("[RoleplayPhone] USER_REMOVED: %d left group, %d members remain",
+                userId, #remaining))
+        end
+    end
+    -- Clear call waiting if the disconnecting player was queued to join this machine
+    if RoleplayPhone.pendingIncoming and RoleplayPhone.pendingIncoming.fromUserId == userId then
+        RoleplayPhone.pendingIncoming = nil
+        print(string.format("[RoleplayPhone] USER_REMOVED: cleared pendingIncoming from userId %d", userId))
+    end
+
     RoleplayPhone.onlineUsers[userId] = nil
     g_server:broadcastEvent(RI_PlayerGoodbyeEvent.new(userId))
 end, RoleplayPhone)
@@ -208,13 +252,7 @@ TypeManager.validateTypes = Utils.prependedFunction(TypeManager.validateTypes, f
 end)
 
 -- ─── Late-joiner voice sync ───────────────────────────────────────────────────
--- When a new user joins mid-session, broadcast all active calls so their client
--- can build the correct voice isolation state. Without this, late joiners hear
--- calls that should be isolated from them.
-FSBaseMission.onUserAdded = Utils.appendedFunction(FSBaseMission.onUserAdded,
-    function(mission, user)
-        if g_server == nil then return end
-        for _, pair in ipairs(RoleplayPhone.activeCalls) do
-            g_server:broadcastEvent(RI_VoiceCallEvent.new(pair[1], pair[2], true))
-        end
-    end)
+-- Active call state is synced in RI_PlayerHelloEvent:run() (PlayerEvents.lua),
+-- which fires AFTER CURRENT_MISSION_LOADED on the client — guaranteeing the mod
+-- is ready to handle the event. The old FSBaseMission.onUserAdded hook fired too
+-- early (raw TCP connect), before the client had initialized, so events were dropped.
